@@ -3,10 +3,10 @@
 # 404 model_not_found on testing (2026-11-22) and a live /v1/models check showed NO Llama model
 # available to this Groq key at all. Tried openai/gpt-oss-20b next — it has BUILT-IN tools
 # (browser_search/code_interpreter per Groq's docs) that fire even with no tools declared,
-# causing intermittent 400s ("Tool choice is none, but model called a tool"). Using
-# qwen/qwen3.8-27b instead, which doesn't carry that behavior. NOT YET CONFIRMED with Manahil —
-# this changes a documented project assumption, raise it with her/the team before treating it
-# as final.
+# causing intermittent 400s ("Tool choice is none, but model called a tool"). Switched to
+# qwen/qwen3.8-27b, which doesn't carry that behavior — confirmed, not just assumed: Manahil's
+# merged T01 script uses the same model independently, and her T03 schema doc
+# (docs/log_schema.md, PR #5) uses it in the summary-line example too.
 model: "qwen/qwen3.8-27b"
 temperature: 0.0
 max_steps: 30

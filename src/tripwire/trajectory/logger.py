@@ -1,8 +1,7 @@
-"""PROVISIONAL trajectory logger (T12 scaffold) — pure JSONL file I/O.
+"""Trajectory logger (T12) — JSONL file I/O matching docs/log_schema.md v1.0 (PR #5).
 
-No ALFWorld/Groq coupling, so this can be built and tested before docs/log_schema.md (T03)
-lands. Once the real schema is merged, revise StepRecord/EpisodeSummaryRecord in schema.py;
-this file's I/O functions should not need to change.
+No ALFWorld/Groq coupling: this only writes/reads the JSONL files, so it doesn't depend on
+the live agent runner.
 """
 
 from __future__ import annotations
@@ -49,3 +48,20 @@ def read_jsonl(path: str | Path) -> list[dict]:
     """Read back a trajectory file as a list of dicts, for tests/validation."""
     with Path(path).open("r", encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
+
+
+def load_prefix(path: str | Path, k: int) -> dict:
+    """Load what a monitor is allowed to see: task input, initial observation, steps 1..k.
+
+    Per docs/log_schema.md's no-leak rule, this is the one function T17/T26/T29 call instead
+    of writing their own truncation: `outcome` and every other summary-only key are never
+    included in the result, no matter how large `k` is or whether the episode has finished.
+    """
+    records = read_jsonl(path)
+    summary = next((r for r in records if r.get("type") == "episode_summary"), None)
+    steps = [r for r in records if r.get("type") == "step" and r["step"] <= k]
+    return {
+        "task_input": summary["task_input"] if summary else None,
+        "initial_observation": summary["initial_observation"] if summary else None,
+        "steps": steps,
+    }
