@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from tripwire.paths import resolve_output_dir
 from tripwire.trajectory.schema import EpisodeSummaryRecord, StepRecord
 
 
@@ -16,8 +17,8 @@ class TrajectoryLogger:
     """Writes one JSONL line per step plus one episode-summary line, per episode file."""
 
     def __init__(self, output_dir: str | Path, episode_id: str):
-        self._path = Path(output_dir) / f"{episode_id}.jsonl"
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        output_dir = resolve_output_dir(str(output_dir))
+        self._path = output_dir / f"{episode_id}.jsonl"
         self._file = self._path.open("a", encoding="utf-8")
 
     @property
