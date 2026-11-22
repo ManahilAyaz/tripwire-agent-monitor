@@ -40,17 +40,21 @@ def call_with_retry(
     backoff_base_seconds: float = 1.0,
     backoff_max_seconds: float = 30.0,
     sleep: Callable[[float], None] = time.sleep,
-) -> T:
+) -> tuple[T, int]:
     """Call ``fn`` with exponential backoff on retryable errors.
 
     Retries up to ``max_retries`` times, doubling the delay each attempt (capped at
     ``backoff_max_seconds``, with jitter), and re-raises as :class:`RetryExhaustedError`
     once retries are exhausted. Non-retryable exceptions propagate immediately.
+
+    Returns ``(result, attempts)`` — ``attempts`` is how many retries were needed (0 if the
+    first call succeeded), which the caller logs as docs/log_schema.md's per-step
+    ``retry_count``.
     """
     attempt = 0
     while True:
         try:
-            return fn()
+            return fn(), attempt
         except Exception as exc:  # noqa: BLE001 - re-raised below, not swallowed
             if not is_retryable(exc) or attempt >= max_retries:
                 raise RetryExhaustedError(
@@ -66,3 +70,31 @@ def enforce_max_steps(step: int, max_steps: int) -> None:
     """Raise :class:`MaxStepsExceededError` once ``step`` reaches ``max_steps``."""
     if step >= max_steps:
         raise MaxStepsExceededError(f"Episode exceeded max_steps cap ({max_steps})")
+
+
+def make_groq_llm(model: str) -> Callable[[list[dict]], str]:
+    """Build a ``llm(messages) -> reply_text`` callable against the Groq API.
+
+    Reads ``GROQ_API_KEY`` from the environment only (never hard-coded), same contract as
+    ``scripts/t01_sanity_test.py::make_groq_llm`` — kept here instead since this is the
+    Groq-facing module and other callers (``run_episode``, the batch runner) need it too.
+    """
+    import os
+
+    from openai import OpenAI
+
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY is missing. Set it before calling make_groq_llm().")
+    client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
+
+    def llm(messages: list[dict]) -> str:
+        response = client.chat.completions.create(
+            model=model, messages=messages, temperature=0.2, max_tokens=300
+        )
+        message = response.choices[0].message
+        if not message.content:
+            raise ValueError("The model returned an empty response.")
+        return message.content
+
+    return llm
