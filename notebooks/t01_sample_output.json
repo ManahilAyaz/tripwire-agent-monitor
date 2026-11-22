@@ -1,0 +1,35 @@
+{
+  "goal": "heat some potato and put it in sidetable.",
+  "steps": [
+    {
+      "t": 1,
+      "thought": "I need to find a potato first. Let me check the fridge as it's a common place to store food items like potatoes.",
+      "action": "go to fridge 1",
+      "observation": "You arrive at fridge 1. The fridge 1 is closed."
+    },
+    {
+      "t": 2,
+      "thought": "I need to open the fridge to see if there's a potato inside.",
+      "action": "open fridge 1",
+      "observation": "You open the fridge 1. The fridge 1 is open. In it, you see a bowl 1, a egg 1, a potato 3, a potato 2, a potato 1, and a tomato 1."
+    },
+    {
+      "t": 3,
+      "thought": "I found potatoes in the fridge. I'll take one of them to heat it up.",
+      "action": "take potato 1 from fridge 1",
+      "observation": "You pick up the potato 1 from the fridge 1."
+    },
+    {
+      "t": 4,
+      "thought": "I have the potato. Now I need to heat it. I can use the microwave or the stove to heat it. Let me go to the microwave first as it's a common way to heat food.",
+      "action": "go to microwave 1",
+      "observation": "You arrive at microwave 1. The microwave 1 is closed."
+    },
+    {
+      "t": 5,
+      "thought": "I need to open the microwave to put the potato inside and heat it.",
+      "action": "open microwave 1",
+      "observation": "You open the microwave 1. The microwave 1 is open. In it, you see a cup 1."
+    }
+  ]
+}
