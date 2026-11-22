@@ -28,9 +28,10 @@ def test_retries_then_succeeds(monkeypatch):
             raise value
         return value
 
-    result = call_with_retry(flaky, max_retries=5, sleep=sleeps.append)
+    result, retry_count = call_with_retry(flaky, max_retries=5, sleep=sleeps.append)
 
     assert result == "ok"
+    assert retry_count == 2  # two retries before success
     assert len(sleeps) == 2  # one sleep per retried attempt
 
 
