@@ -1,0 +1,10 @@
+# ALFWorld is installed separately (needs Python 3.10, see docs/setup.md)
+openai
+networkx
+scipy
+pandas
+scikit-learn
+pyyaml
+python-dotenv
+matplotlib
+pytest
