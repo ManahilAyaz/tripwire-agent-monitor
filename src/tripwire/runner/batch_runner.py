@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from tripwire.agent.react_agent import run_episode
+from tripwire.paths import resolve_output_dir
 from tripwire.trajectory.logger import TrajectoryLogger, read_jsonl
 from tripwire.trajectory.schema import EpisodeSummaryRecord
 
@@ -62,7 +63,7 @@ def run_batch(
     except ImportError:
         pass
 
-    output_dir = Path(output_dir)
+    output_dir = resolve_output_dir(str(output_dir))
     summaries: list[EpisodeSummaryRecord] = []
 
     for i in range(1, num_episodes + 1):

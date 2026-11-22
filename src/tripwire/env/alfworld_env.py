@@ -12,13 +12,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from tripwire.paths import resolve_config_path
+
 
 def make_env(config_path: str) -> Any:
     """Build a single-instance (batch_size=1) ALFWorld environment from a config file."""
     import yaml
     from alfworld.agents.environment import get_environment
 
-    with open(config_path, "r") as file:
+    with open(resolve_config_path(config_path), "r") as file:
         cfg = yaml.safe_load(file)
     return get_environment(cfg["env"]["type"])(cfg, train_eval="train").init_env(batch_size=1)
 

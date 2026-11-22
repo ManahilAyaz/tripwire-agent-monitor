@@ -10,6 +10,7 @@ import yaml
 from tripwire.agent.groq_client import make_groq_llm
 from tripwire.agent.react_agent import run_episode
 from tripwire.env.alfworld_env import make_env, reset_episode, step_episode
+from tripwire.paths import resolve_config_path, resolve_output_dir
 from tripwire.trajectory.logger import TrajectoryLogger
 
 
@@ -21,7 +22,7 @@ def main() -> None:
     parser.add_argument("--episode-id", default="ep_manual_0001")
     args = parser.parse_args()
 
-    with open(args.agent_config, "r") as f:
+    with open(resolve_config_path(args.agent_config), "r") as f:
         cfg = yaml.safe_load(f)
 
     env = make_env(args.config)
@@ -39,7 +40,7 @@ def main() -> None:
         backoff_max_seconds=cfg["backoff_max_seconds"],
     )
 
-    with TrajectoryLogger(args.out_dir, args.episode_id) as logger:
+    with TrajectoryLogger(resolve_output_dir(args.out_dir), args.episode_id) as logger:
         for step in steps:
             logger.log_step(step)
         logger.log_episode_summary(summary)

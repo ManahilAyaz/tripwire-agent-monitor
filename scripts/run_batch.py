@@ -11,6 +11,7 @@ import yaml
 
 from tripwire.agent.groq_client import make_groq_llm
 from tripwire.env.alfworld_env import make_env, reset_episode, step_episode
+from tripwire.paths import resolve_config_path
 from tripwire.runner.batch_runner import run_batch
 
 
@@ -23,7 +24,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
-    with open(args.agent_config, "r") as f:
+    with open(resolve_config_path(args.agent_config), "r") as f:
         cfg = yaml.safe_load(f)
 
     env = make_env(args.config)
