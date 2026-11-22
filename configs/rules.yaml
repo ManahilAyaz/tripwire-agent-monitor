@@ -1,0 +1,26 @@
+# configs/rules.yaml
+# Configuration for the Layer 1 deterministic rule monitor.
+#
+# Status: PROVISIONAL.
+# Thresholds are starting points and have not been validated on real trajectories.
+# Final threshold decisions belong to T10/T19 and require pilot evaluation.
+#
+# GRAPHECTORY supplies features. This file defines when a rule raises an alert.
+# Additional signal thresholds may be added after their feature contracts
+# are confirmed.
+#
+# SIG-02 is not configured yet because the GRAPHECTORY cycle_length
+# feature contract is still pending.
+
+repeated_action:
+  # Signal SIG-01 / taxonomy TX-01.
+  #
+  # Total number of consecutive occurrences of the same normalized action.
+  # The first occurrence is included.
+  # threshold: 3 means the same action appears 3 times in a row.
+  #
+  # Normalization is fixed in code:
+  # trim, collapse whitespace, and lowercase.
+  # Every step must have parse_ok = true.
+
+  threshold: 3
