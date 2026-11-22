@@ -1,13 +1,5 @@
 # Candidate Observable Signals (T08)
 
-| Item | Value |
-|---|---|
-| Project | Tripwire: Mid-Trajectory Failure Detection for Long-Horizon AI Agents |
-| Task | T08, Week 1 (November 16-22, 2026) |
-| Author | Aqsa Zaib |
-| Status | Draft v1.1, updated for Trajectory Log Schema v1.0 and the GRAPHECTORY design decisions. Candidate list only. Not reviewed or approved by the team or the supervisor. |
-| Related files | `docs/taxonomy.md` (T07), `docs/annotation_guideline.md` (T09), `configs/rules.yaml` and `SRS/Tripwire/monitors/rules.py` (T10) |
-
 ## 1. Purpose and scope
 
 This document lists measurable signals that Tripwire could use to notice possible failure while an agent is still running. These are candidates. Only SIG-01 is implemented (T10). No threshold here has been validated on data. Every symbol such as K, K_o, K_u, C, W_s, W is a placeholder for a value that T10/T19 will choose from pilot data; the numbers shown in examples only illustrate the arithmetic.
