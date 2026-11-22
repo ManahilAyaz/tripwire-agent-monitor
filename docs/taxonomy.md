@@ -1,13 +1,5 @@
 # Failure Taxonomy v1.1 (T07)
 
-| Item | Value |
-|---|---|
-| Project | Tripwire: Mid-Trajectory Failure Detection for Long-Horizon AI Agents |
-| Task | T07, Week 1 (November 16-22, 2026) |
-| Author | Aqsa Zaib |
-| Status | Draft v1.1, updated for Trajectory Log Schema v1.0. Not yet reviewed or approved by the team or the supervisor. |
-| Related files | `docs/candidate_signals.md` (T08), `docs/annotation_guideline.md` (T09), `configs/rules.yaml` and `SRS/Tripwire/monitors/rules.py` (T10) |
-
 ## 1. Purpose and scope
 
 This taxonomy lists patterns of suspicious or failing behaviour that can be seen in an agent trajectory, mainly in ALFWorld text tasks. It is used by:
