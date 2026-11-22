@@ -1,0 +1,17 @@
+# Kashmala's agent config (T13/T14 read these; nothing is hard-coded in src/).
+# model: CLAUDE.md fixes the agent as Llama-3.1-8B-Instruct, but `llama-3.1-8b-instant` returned
+# 404 model_not_found on testing (2026-11-22) and a live /v1/models check showed NO Llama model
+# available to this Groq key at all. Tried openai/gpt-oss-20b next — it has BUILT-IN tools
+# (browser_search/code_interpreter per Groq's docs) that fire even with no tools declared,
+# causing intermittent 400s ("Tool choice is none, but model called a tool"). Switched to
+# qwen/qwen3.8-27b, which doesn't carry that behavior — confirmed, not just assumed: Manahil's
+# merged T01 script uses the same model independently, and her T03 schema doc
+# (docs/log_schema.md, PR #5) uses it in the summary-line example too.
+model: "qwen/qwen3.8-27b"
+temperature: 0.0
+max_steps: 30
+
+# T13: retry/backoff on Groq 429/5xx
+max_retries: 5
+backoff_base_seconds: 1.0
+backoff_max_seconds: 30.0
