@@ -1,13 +1,5 @@
 # Annotation Guideline v1.1 (T09)
 
-| Item | Value |
-|---|---|
-| Project | Tripwire: Mid-Trajectory Failure Detection for Long-Horizon AI Agents |
-| Task | T09, Week 1 (November 16-22, 2026) |
-| Author | Aqsa Zaib |
-| Status | Draft v1.1, updated for Trajectory Log Schema v1.0. Not yet reviewed or approved by the team or the supervisor. Not tested on real trajectories. |
-| Related files | `docs/taxonomy.md` (T07), `docs/candidate_signals.md` (T08), `configs/rules.yaml` (T10, **not to be consulted while annotating**) |
-
 All examples in this document are made up for illustration. None of them come from real agent runs. Step numbers are 1-indexed as in schema v1.0.
 
 ## A. Annotation objectives
