@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from tripwire.trajectory.logger import TrajectoryLogger, load_prefix, read_jsonl
-from tripwire.trajectory.schema import EpisodeSummaryRecord, StepRecord
+from tripwire.trajectory.schema import SCHEMA_VERSION, EpisodeSummaryRecord, StepRecord
 
 
 def _write_sample_episode(tmp_path, episode_id="ep_test_0001"):
@@ -58,7 +58,7 @@ def test_logs_steps_and_summary_as_valid_jsonl(tmp_path):
     assert lines[1]["retry_count"] == 1
     assert lines[1]["parse_ok"] is False
     assert lines[2]["type"] == "episode_summary"
-    assert lines[2]["schema_version"] == "1.0"
+    assert lines[2]["schema_version"] == SCHEMA_VERSION
     assert lines[2]["outcome"] == "success"
 
 
