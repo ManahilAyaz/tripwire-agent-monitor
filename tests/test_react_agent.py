@@ -180,6 +180,30 @@ def test_run_episode_captures_nonzero_retry_count_after_flaky_llm_call():
     assert summary.outcome == "success"
 
 
+def test_run_episode_bounds_message_history_to_window():
+    seen_lengths = []
+
+    def recording_llm(messages):
+        seen_lengths.append(len(messages))
+        return "Thought: keep going\nAction: look"
+
+    steps, summary = run_episode(
+        reset_fn=_fake_reset(),
+        step_fn=_scripted_step(*[("still going", False, False)] * 6),
+        llm_call=recording_llm,
+        episode_id="ep_0009",
+        model="qwen/qwen3.8-27b",
+        max_steps=6,
+        history_window_steps=2,
+    )
+
+    assert summary.num_steps == 6
+    # system + initial observation + at most 2 step-exchanges (4 messages) = 6, never the full
+    # un-truncated history (which would reach 2 + 2*6 = 14 by the last step)
+    assert max(seen_lengths) <= 6
+    assert seen_lengths[-1] == 6
+
+
 def test_run_episode_logs_parse_ok_false_when_reply_has_no_action_line():
     steps, summary = run_episode(
         reset_fn=_fake_reset(),

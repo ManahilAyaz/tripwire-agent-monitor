@@ -156,6 +156,57 @@ def test_run_batch_gives_up_after_one_retry_within_same_run(tmp_path):
     assert is_episode_done(tmp_path / "ep_0001.jsonl") is False
 
 
+def test_run_batch_stops_early_after_consecutive_error_streak(tmp_path):
+    calls = []
+
+    def always_errors(reset_fn, step_fn, llm_call, episode_id, *args):
+        calls.append(episode_id)
+        return [], _summary(episode_id, "error", num_steps=0)
+
+    summaries = run_batch(
+        reset_fn=lambda: ("obs", "goal", "task"),
+        step_fn=lambda a: ("o", True, True),
+        llm_call=lambda m: "Thought: x\nAction: look",
+        model="qwen/qwen3.8-27b",
+        output_dir=tmp_path,
+        num_episodes=10,
+        max_steps=5,
+        max_consecutive_errors=2,
+        run_episode_fn=always_errors,
+    )
+
+    # 2 attempts (initial + retry) per episode, for exactly 2 episodes before stopping — not
+    # all 10 episodes' worth of wasted attempts
+    assert calls == ["ep_0001", "ep_0001", "ep_0002", "ep_0002"]
+    assert len(summaries) == 2
+
+
+def test_run_batch_success_resets_the_consecutive_error_streak(tmp_path):
+    outcomes = iter(["error", "error", "success", "error", "error"])
+
+    def scripted(reset_fn, step_fn, llm_call, episode_id, *args):
+        outcome = next(outcomes)
+        return [], _summary(episode_id, outcome, num_steps=0)
+
+    summaries = run_batch(
+        reset_fn=lambda: ("obs", "goal", "task"),
+        step_fn=lambda a: ("o", True, True),
+        llm_call=lambda m: "Thought: x\nAction: look",
+        model="qwen/qwen3.8-27b",
+        output_dir=tmp_path,
+        num_episodes=3,
+        max_steps=5,
+        max_consecutive_errors=2,
+        run_episode_fn=scripted,
+    )
+
+    # ep_0001: error, error (retry) -> still error, counted. ep_0002: success (streak resets).
+    # ep_0003: error, error (retry) -> error again, streak hits 2 -> would stop, but there's no
+    # ep_0004 anyway since num_episodes=3. All 3 episodes run.
+    assert len(summaries) == 3
+    assert [s.outcome for s in summaries] == ["error", "success", "error"]
+
+
 def test_run_batch_writes_valid_jsonl_for_fresh_episode(tmp_path):
     def fake_run_episode(reset_fn, step_fn, llm_call, episode_id, *args):
         return [_one_step(episode_id, step=1), _one_step(episode_id, step=2)], _summary(

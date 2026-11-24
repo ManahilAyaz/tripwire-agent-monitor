@@ -15,3 +15,14 @@ max_steps: 30
 max_retries: 5
 backoff_base_seconds: 1.0
 backoff_max_seconds: 30.0
+
+# qwen/qwen3.8-27b's free-tier org limit is 200K tokens/day (console.groq.com/dashboard/limits,
+# checked 2026-11-24) — without a bound, resending the full growing episode history every step
+# let 2 full 30-step episodes exhaust the whole day's budget on their own. This caps the prompt
+# to the system message + initial observation + the last N step-exchanges.
+history_window_steps: 10
+
+# T14: if this many episodes in a row come back "error" (even after their one in-run retry),
+# stop the batch early instead of burning the rest of --n the same way — a streak this long
+# means something systemic (e.g. quota exhaustion), not one flaky episode.
+max_consecutive_errors: 3
