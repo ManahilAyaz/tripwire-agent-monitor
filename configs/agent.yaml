@@ -7,6 +7,12 @@
 # qwen/qwen3.8-27b, which doesn't carry that behavior — confirmed, not just assumed: Manahil's
 # merged T01 script uses the same model independently, and her T03 schema doc
 # (docs/log_schema.md, PR #5) uses it in the summary-line example too.
+#
+# Superseded for actual pilot collection (2026-11-24): Groq's free-tier daily token quota
+# (200K) is too small for a 30-50 episode batch regardless of model - see
+# configs/agent_ollama.yaml, which runs Llama 3.1 8B locally via Ollama instead (no Groq, no
+# daily quota). This file is kept for single-episode sanity checks and for Manahil's T01
+# script/T03 schema doc, which still reference Qwen specifically.
 model: "qwen/qwen3.8-27b"
 temperature: 0.0
 max_steps: 30
