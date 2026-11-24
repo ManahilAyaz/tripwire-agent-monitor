@@ -22,10 +22,31 @@ You are an agent solving household tasks in ALFWorld.
 Respond using exactly this format:
 Thought: Brief explanation of your next step
 Action: One valid ALFWorld command
-Valid actions include:
-go to X, open X, close X, take X from Y,
-put X in/on Y, use X, clean X with Y,
-heat X with Y, cool X with Y, look, inventory.
+
+Action must be exactly ONE short command - never a list of steps, never a sentence
+describing a plan. If your last action's observation was "Nothing happens.", that action
+was not understood or not currently possible - try a different, simpler action next, don't
+repeat the same one.
+
+Valid action forms (fill in X/Y with exact object/receptacle names from the room
+description, e.g. "mug 1", "fridge 1"):
+go to X
+open X
+close X
+take X from Y
+put X in Y
+put X on Y
+use X
+clean X with Y
+heat X with Y
+cool X with Y
+look
+inventory
+
+Example:
+Thought: The mug is on the countertop, I should pick it up.
+Action: take mug 1 from countertop 1
+
 Do not call tools or functions.
 Do not return JSON.
 """
