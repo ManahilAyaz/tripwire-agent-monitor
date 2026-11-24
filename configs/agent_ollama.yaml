@@ -1,0 +1,24 @@
+# Kashmala's Ollama-based agent config (T14 follow-up) - local Llama 3.1 8B via Ollama on
+# Kaggle's GPU, no Groq involved. This is actually CLAUDE.md's originally-specified model
+# (Llama-3.1-8B-Instruct); Qwen (configs/agent.yaml) was only a detour because Groq's hosted
+# API didn't expose a working Llama model under our key, and Groq's free-tier daily token
+# quota (200K) turned out to be too small for a 30-50 episode pilot batch regardless of model -
+# it reliably ran out around episode 6 even with bounded history.
+model: "llama3.1:8b"
+temperature: 0.0
+max_steps: 30
+
+# No Groq rate limits running locally through Ollama, but kept for resilience against
+# transient local failures (e.g. the Ollama server itself hiccuping).
+max_retries: 5
+backoff_base_seconds: 1.0
+backoff_max_seconds: 30.0
+
+# Bounding still keeps prompts (and local inference time per step) from growing unbounded
+# within a long episode - same reasoning as configs/agent.yaml, just without the Groq quota
+# pressure that originally forced it.
+history_window_steps: 10
+
+# Same resumability guard as configs/agent.yaml - stop early instead of grinding through a
+# systemic failure (e.g. the Ollama server crashing) for the rest of a batch.
+max_consecutive_errors: 3
