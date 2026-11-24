@@ -73,25 +73,35 @@ def enforce_max_steps(step: int, max_steps: int) -> None:
 
 
 def make_groq_llm(model: str, log_rate_limits: bool = True) -> Callable[[list[dict]], str]:
-    """Build a ``llm(messages) -> reply_text`` callable against the Groq API.
+    """Build a ``llm(messages) -> reply_text`` callable against an OpenAI-compatible API.
 
-    Reads ``GROQ_API_KEY`` from the environment only (never hard-coded), same contract as
-    ``scripts/t01_sanity_test.py::make_groq_llm`` — kept here instead since this is the
-    Groq-facing module and other callers (``run_episode``, the batch runner) need it too.
+    Defaults to Groq, reading ``GROQ_API_KEY`` from the environment only (never hard-coded),
+    same contract as ``scripts/t01_sanity_test.py::make_groq_llm`` — kept here instead since
+    this is the LLM-facing module and other callers (``run_episode``, the batch runner) need
+    it too.
 
-    When ``log_rate_limits`` is true (the default), each call prints Groq's own
-    ``x-ratelimit-*`` response headers — the live, authoritative remaining-quota numbers for
-    this key, straight from the server for the request just made. This is what tells you how
-    much of today's budget is left without checking the console.groq.com dashboard by hand.
+    ``LLM_BASE_URL``/``LLM_API_KEY`` override the endpoint and key when set (e.g. to point at
+    a local Ollama server instead of Groq), which is all a different OpenAI-compatible provider
+    needs — Groq stays the default when neither is set.
+
+    When ``log_rate_limits`` is true (the default), each call prints the provider's own
+    ``x-ratelimit-*`` response headers if present — Groq's live, authoritative remaining-quota
+    numbers for this key, straight from the server for the request just made. This is what
+    tells you how much of today's budget is left without checking the console.groq.com
+    dashboard by hand. Providers that don't send these headers (e.g. local Ollama) just print
+    nothing here.
     """
     import os
 
     from openai import OpenAI
 
-    api_key = os.environ.get("GROQ_API_KEY")
+    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("GROQ_API_KEY")
     if not api_key:
-        raise ValueError("GROQ_API_KEY is missing. Set it before calling make_groq_llm().")
-    client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
+        raise ValueError(
+            "GROQ_API_KEY (or LLM_API_KEY) is missing. Set one before calling make_groq_llm()."
+        )
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
+    client = OpenAI(base_url=base_url, api_key=api_key)
 
     def llm(messages: list[dict]) -> str:
         raw_response = client.chat.completions.with_raw_response.create(
