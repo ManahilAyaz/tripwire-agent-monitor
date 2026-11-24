@@ -61,11 +61,18 @@ def run_episode(
     max_retries: int = 5,
     backoff_base_seconds: float = 1.0,
     backoff_max_seconds: float = 30.0,
+    history_window_steps: int = 10,
 ) -> tuple[list[StepRecord], EpisodeSummaryRecord]:
     """Run one episode and return (steps, summary) — pure data, no filesystem writes.
 
     `reset_fn`/`step_fn` are injected (normally `env.alfworld_env.reset_episode`/`step_episode`
     bound to a live env) so this is testable with fakes and never imports ALFWorld itself.
+
+    `history_window_steps` bounds how many of the most recent step-exchanges are kept in the
+    prompt sent to `llm_call` (the system message and initial observation are always kept).
+    Without this, the full episode history gets resent every step, so a 30-step episode's token
+    usage grows roughly with the triangular sum of its own length — two such episodes were
+    enough to exhaust Groq's 200K-tokens/day free-tier budget for qwen/qwen3.8-27b outright.
     """
     start_timestamp = _now_iso()
     try:
@@ -129,6 +136,9 @@ def run_episode(
         messages.append(
             {"role": "user", "content": f"Observation: {observation}\nContinue solving the goal."}
         )
+        max_messages = 2 + 2 * history_window_steps
+        if len(messages) > max_messages:
+            messages = messages[:2] + messages[-2 * history_window_steps :]
 
         if done:
             outcome = "success" if won else "failure"

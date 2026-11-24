@@ -47,6 +47,7 @@ def run_batch(
     backoff_base_seconds: float = 1.0,
     backoff_max_seconds: float = 30.0,
     seed: int = 0,
+    history_window_steps: int = 10,
     run_episode_fn: Callable[..., tuple[list, EpisodeSummaryRecord]] = run_episode,
 ) -> list[EpisodeSummaryRecord]:
     """Collect up to `num_episodes` pilot trajectories into `output_dir`.
@@ -85,6 +86,7 @@ def run_batch(
             max_retries,
             backoff_base_seconds,
             backoff_max_seconds,
+            history_window_steps,
         )
 
         if summary.outcome == "error":
@@ -102,6 +104,7 @@ def run_batch(
                 max_retries,
                 backoff_base_seconds,
                 backoff_max_seconds,
+                history_window_steps,
             )
 
         with TrajectoryLogger(output_dir, episode_id) as logger:

@@ -42,6 +42,7 @@ def main() -> None:
         backoff_base_seconds=cfg["backoff_base_seconds"],
         backoff_max_seconds=cfg["backoff_max_seconds"],
         seed=args.seed,
+        history_window_steps=cfg.get("history_window_steps", 10),
     )
 
     counts: dict[str, int] = {}

@@ -38,6 +38,7 @@ def main() -> None:
         max_retries=cfg["max_retries"],
         backoff_base_seconds=cfg["backoff_base_seconds"],
         backoff_max_seconds=cfg["backoff_max_seconds"],
+        history_window_steps=cfg.get("history_window_steps", 10),
     )
 
     with TrajectoryLogger(args.out_dir, args.episode_id) as logger:
