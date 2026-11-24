@@ -1,4 +1,4 @@
-# Trajectory log schema (JSONL), v1.0
+# Trajectory log schema (JSONL), v1.1
 
 Shared contract between Kashmala (logger, runner), Manahil (representations, Layer 2, eval) and Aqsa (rules).
 Change it only by PR, agreed by all three. If you change it, bump `schema_version`.
@@ -22,22 +22,23 @@ Change it only by PR, agreed by all three. If you change it, bump `schema_versio
 | `step` | int | 1-indexed. Step 1 is the agent's first action |
 | `timestamp` | str | ISO-8601 UTC with milliseconds and `Z`, taken when the environment replied |
 | `thought` | str | the agent's reasoning text for this step, `""` if none |
-| `action` | str | the command actually sent to the environment |
+| `action` | str | the command actually sent to the environment (mapped to the closest ALFWorld-admissible command when the model's raw text wasn't an exact match) |
 | `observation` | str | the environment's reply to that action |
 | `parse_ok` | bool | `false` if the model reply had no valid `Action:` and the logger substituted `look` |
 | `retry_count` | int | API retries needed for this step's LLM call (0 if none) |
+| `raw_action` | str | (v1.1) what the model actually produced, before mapping to `action`. Equal to `action` when no mapping was needed - kept so an invalid/invented action is visible data, not silently corrected away |
 
 ```jsonl-step
-{"type":"step","episode_id":"ep_0001","step":1,"timestamp":"2026-11-22T10:14:52.101Z","thought":"The potato may be in the fridge.","action":"go to fridge 1","observation":"You arrive at fridge 1. The fridge 1 is closed.","parse_ok":true,"retry_count":0}
-{"type":"step","episode_id":"ep_0001","step":2,"timestamp":"2026-11-22T10:14:54.380Z","thought":"Open it.","action":"open fridge 1","observation":"You open the fridge 1. In it, you see a potato 1.","parse_ok":true,"retry_count":0}
-{"type":"step","episode_id":"ep_0001","step":3,"timestamp":"2026-11-22T10:14:57.012Z","thought":"Take the potato.","action":"take potato 1 from fridge 1","observation":"You pick up the potato 1 from the fridge 1.","parse_ok":true,"retry_count":1}
+{"type":"step","episode_id":"ep_0001","step":1,"timestamp":"2026-11-22T10:14:52.101Z","thought":"The potato may be in the fridge.","action":"go to fridge 1","observation":"You arrive at fridge 1. The fridge 1 is closed.","parse_ok":true,"retry_count":0,"raw_action":"go to fridge 1"}
+{"type":"step","episode_id":"ep_0001","step":2,"timestamp":"2026-11-22T10:14:54.380Z","thought":"Open it.","action":"open fridge 1","observation":"You open the fridge 1. In it, you see a potato 1.","parse_ok":true,"retry_count":0,"raw_action":"open fridge 1"}
+{"type":"step","episode_id":"ep_0001","step":3,"timestamp":"2026-11-22T10:14:57.012Z","thought":"Take the potato.","action":"take potato 1 from fridge 1","observation":"You pick up the potato 1 from the fridge 1.","parse_ok":true,"retry_count":1,"raw_action":"take the potato 1 from the fridge 1"}
 ```
 
 ## Episode summary line (required keys)
 | key | type | meaning |
 |---|---|---|
 | `type` | str | always `"episode_summary"` |
-| `schema_version` | str | `"1.0"` |
+| `schema_version` | str | `"1.1"` |
 | `episode_id` | str | matches the step lines |
 | `task_id` | str | ALFWorld game name taken from the gamefile path |
 | `task_input` | str | the goal text, e.g. `heat some potato and put it in sidetable` |
@@ -58,7 +59,7 @@ Change it only by PR, agreed by all three. If you change it, bump `schema_versio
 `failure` and `max_steps` both count as "task failed" in analysis. `outcome` says how the episode ended; the failure *category* (why it went wrong) comes from the taxonomy and annotations, not from this field.
 
 ```jsonl-summary
-{"type":"episode_summary","schema_version":"1.0","episode_id":"ep_0001","task_id":"pick_heat_then_place_in_recep-Potato-None-SideTable-10","task_input":"heat some potato and put it in sidetable","initial_observation":"You are in the middle of a room. Looking quickly around you, you see a fridge 1, a microwave 1, a sidetable 1.","num_steps":12,"outcome":"success","model":"qwen/qwen3.8-27b","max_steps":40,"start_timestamp":"2026-11-22T10:14:50.000Z","end_timestamp":"2026-11-22T10:15:40.200Z"}
+{"type":"episode_summary","schema_version":"1.1","episode_id":"ep_0001","task_id":"pick_heat_then_place_in_recep-Potato-None-SideTable-10","task_input":"heat some potato and put it in sidetable","initial_observation":"You are in the middle of a room. Looking quickly around you, you see a fridge 1, a microwave 1, a sidetable 1.","num_steps":12,"outcome":"success","model":"qwen/qwen3.8-27b","max_steps":40,"start_timestamp":"2026-11-22T10:14:50.000Z","end_timestamp":"2026-11-22T10:15:40.200Z"}
 ```
 The example lines are illustrative. Replace them with real lines once the T12 logger exists.
 
@@ -69,3 +70,4 @@ The example lines are illustrative. Replace them with real lines once the T12 lo
 4. `retry_count` is per step. Aggregate it per episode when needed.
 5. One JSONL file per episode, so a finished episode is a file with a summary line and a batch run can resume.
 6. Added by Manahil, please confirm: `type` on every line, `parse_ok`, `initial_observation`, `model`, `max_steps`, `schema_version`.
+7. **v1.1, needs Manahil + Aqsa's agreement per this doc's own rule above - not yet confirmed by either.** Added `raw_action` to the step line: the pilot runs showed a small local model (Llama 3.1 8B) frequently producing invalid/invented actions that ALFWorld silently turns into "Nothing happens." The agent now maps these to the closest admissible command so the episode can continue, but logging only the corrected `action` would erase exactly the kind of failure signal this project exists to monitor - so `raw_action` keeps the model's real, uncorrected output alongside it.

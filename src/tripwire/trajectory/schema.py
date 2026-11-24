@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 
 @dataclass
@@ -20,6 +20,12 @@ class StepRecord:
     (`agent/react_agent.py::parse_reply`) substituted "look" — without this flag a parsing
     failure is indistinguishable from the agent genuinely choosing "look", which would pollute
     Aqsa's repeated-action/stagnation signals.
+
+    `raw_action` (v1.1) is what the model actually produced before mapping to the closest
+    ALFWorld-admissible command (equal to `action` when no mapping was needed). Keeping both
+    instead of only the corrected one preserves a real failure-mode signal — a model saying
+    an invalid/invented action is itself something Tripwire exists to monitor, not noise to
+    silently discard.
     """
 
     episode_id: str
@@ -30,6 +36,7 @@ class StepRecord:
     observation: str
     parse_ok: bool = True
     retry_count: int = 0
+    raw_action: str = ""
     type: str = "step"
 
     def to_dict(self) -> dict:

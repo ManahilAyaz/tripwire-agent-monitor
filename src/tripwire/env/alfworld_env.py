@@ -49,15 +49,23 @@ def gamefile_to_task_id(gamefile_path: str) -> str:
     return "/".join(parts[-3:-1])
 
 
-def reset_episode(env: Any) -> tuple[str, str, str]:
-    """Reset the env for a new episode. Returns (initial_observation, task_input, task_id)."""
+def reset_episode(env: Any) -> tuple[str, str, str, list[str]]:
+    """Reset the env for a new episode.
+
+    Returns (initial_observation, task_input, task_id, admissible_commands) - the last is
+    ALFWorld's own list of the only commands it will actually accept right now, which the
+    agent uses to avoid inventing invalid actions (see react_agent.map_to_admissible_action).
+    """
     obs, infos = env.reset()
     initial_observation, task_input = split_observation_and_goal(obs[0])
     task_id = gamefile_to_task_id(infos["extra.gamefile"][0])
-    return initial_observation, task_input, task_id
+    admissible_commands = infos["admissible_commands"][0]
+    return initial_observation, task_input, task_id, admissible_commands
 
 
-def step_episode(env: Any, action: str) -> tuple[str, bool, bool]:
-    """Take one action. Returns (observation, done, won)."""
+def step_episode(env: Any, action: str) -> tuple[str, bool, bool, list[str]]:
+    """Take one action. Returns (observation, done, won, admissible_commands) - the last is
+    ALFWorld's valid-commands list for the *next* step."""
     obs, _scores, dones, infos = env.step([action])
-    return obs[0], bool(dones[0]), bool(infos["won"][0])
+    admissible_commands = infos["admissible_commands"][0]
+    return obs[0], bool(dones[0]), bool(infos["won"][0]), admissible_commands

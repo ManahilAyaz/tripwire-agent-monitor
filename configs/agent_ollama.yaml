@@ -6,7 +6,10 @@
 # it reliably ran out around episode 6 even with bounded history.
 model: "llama3.1:8b"
 temperature: 0.0
-max_steps: 30
+# 50, not 30: the agent now correctly navigates ("go to X" before interacting), which costs
+# real steps exploring a room's cabinets/countertops before it ever reaches the actual task -
+# 30 was sometimes too tight for that alone, separate from solving the task itself.
+max_steps: 50
 
 # No Groq rate limits running locally through Ollama, but kept for resilience against
 # transient local failures (e.g. the Ollama server itself hiccuping).

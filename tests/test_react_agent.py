@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from tripwire.agent.react_agent import parse_reply, run_episode
+from tripwire.agent.react_agent import map_to_admissible_action, parse_reply, run_episode
 
 
 def test_parses_well_formed_reply():
@@ -30,14 +30,34 @@ def test_falls_back_to_look_on_empty_reply():
     assert parse_ok is False
 
 
-def _fake_reset(initial_observation="You are in a room.", task_input="do a thing", task_id="task_abc"):
-    return lambda: (initial_observation, task_input, task_id)
+def test_strips_trailing_punctuation_from_action():
+    thought, action, parse_ok = parse_reply(
+        "Thought: I should heat the cup.\nAction: heat cup 1 with coffeemachine 1."
+    )
+    assert action == "heat cup 1 with coffeemachine 1"
+    assert parse_ok is True
+
+
+def _fake_reset(
+    initial_observation="You are in a room.",
+    task_input="do a thing",
+    task_id="task_abc",
+    admissible_commands=None,
+):
+    commands = admissible_commands if admissible_commands is not None else []
+    return lambda: (initial_observation, task_input, task_id, commands)
 
 
 def _scripted_step(*results):
-    """results: list of (observation, done, won) tuples, one per call to step_fn."""
+    """results: (observation, done, won) or (observation, done, won, admissible_commands)
+    tuples, one per call to step_fn - the 3-tuple form implies admissible_commands=[]."""
     it = iter(results)
-    return lambda action: next(it)
+
+    def step(action):
+        result = next(it)
+        return result if len(result) == 4 else (*result, [])
+
+    return step
 
 
 def _scripted_llm(*replies):
@@ -202,6 +222,68 @@ def test_run_episode_bounds_message_history_to_window():
     # un-truncated history (which would reach 2 + 2*6 = 14 by the last step)
     assert max(seen_lengths) <= 6
     assert seen_lengths[-1] == 6
+
+
+def test_map_to_admissible_action_passes_through_exact_match():
+    admissible = ["go to fridge 1", "look"]
+    assert map_to_admissible_action("go to fridge 1", admissible) == "go to fridge 1"
+
+
+def test_map_to_admissible_action_maps_to_closest_command():
+    admissible = ["take mug 1 from countertop 1", "go to fridge 1", "look"]
+    mapped = map_to_admissible_action("take the mug 1 from the countertop 1.", admissible)
+    assert mapped == "take mug 1 from countertop 1"
+
+
+def test_map_to_admissible_action_passes_through_when_no_admissible_commands():
+    assert map_to_admissible_action("do something weird", []) == "do something weird"
+
+
+def test_run_episode_maps_invalid_action_and_logs_raw_action_separately():
+    steps, summary = run_episode(
+        reset_fn=_fake_reset(admissible_commands=["go to fridge 1", "look"]),
+        step_fn=_scripted_step(("You arrive at fridge 1.", False, False, ["open fridge 1"])),
+        llm_call=_scripted_llm("Thought: check the fridge\nAction: go over to the fridge 1"),
+        episode_id="ep_0010",
+        model="qwen/qwen3.8-27b",
+        max_steps=1,
+    )
+
+    assert steps[0].raw_action == "go over to the fridge 1"
+    assert steps[0].action == "go to fridge 1"
+
+
+def test_run_episode_raw_action_equals_action_when_already_admissible():
+    steps, summary = run_episode(
+        reset_fn=_fake_reset(admissible_commands=["look"]),
+        step_fn=_scripted_step(("You see nothing.", False, False)),
+        llm_call=_scripted_llm("Thought: look around\nAction: look"),
+        episode_id="ep_0011",
+        model="qwen/qwen3.8-27b",
+        max_steps=1,
+    )
+
+    assert steps[0].raw_action == "look"
+    assert steps[0].action == "look"
+
+
+def test_run_episode_includes_valid_actions_in_prompt():
+    seen_messages = []
+
+    def recording_llm(messages):
+        seen_messages.append(messages[-1]["content"])
+        return "Thought: ok\nAction: look"
+
+    run_episode(
+        reset_fn=_fake_reset(admissible_commands=["look", "go to fridge 1"]),
+        step_fn=_scripted_step(("obs", False, False, ["go to fridge 1"])),
+        llm_call=recording_llm,
+        episode_id="ep_0012",
+        model="qwen/qwen3.8-27b",
+        max_steps=1,
+    )
+
+    assert "Valid actions: look, go to fridge 1" in seen_messages[0]
 
 
 def test_run_episode_logs_parse_ok_false_when_reply_has_no_action_line():
