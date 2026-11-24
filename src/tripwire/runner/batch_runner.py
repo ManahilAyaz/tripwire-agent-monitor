@@ -48,6 +48,7 @@ def run_batch(
     backoff_max_seconds: float = 30.0,
     seed: int = 0,
     history_window_steps: int = 10,
+    max_consecutive_errors: int = 3,
     run_episode_fn: Callable[..., tuple[list, EpisodeSummaryRecord]] = run_episode,
 ) -> list[EpisodeSummaryRecord]:
     """Collect up to `num_episodes` pilot trajectories into `output_dir`.
@@ -55,6 +56,13 @@ def run_batch(
     `run_episode_fn` defaults to the real `run_episode` and is overridable in tests. Episode
     ids are a fixed `ep_0001..ep_{num_episodes:04d}` sequence, so a second invocation with the
     same `num_episodes` naturally resumes rather than starting new episodes.
+
+    `max_consecutive_errors` stops the whole run early once that many episodes in a row come
+    back `error` even after their one in-run retry. A streak that long means something
+    systemic is broken (e.g. Groq's daily quota exhausted) rather than one flaky episode, and
+    ploughing through the rest of `num_episodes` the same way would just waste time for no new
+    data — the already-collected episodes (written to `output_dir` as they finish, same as
+    always) are still there to zip up and download.
     """
     random.seed(seed)
     try:
@@ -66,6 +74,7 @@ def run_batch(
 
     output_dir = resolve_output_dir(str(output_dir))
     summaries: list[EpisodeSummaryRecord] = []
+    consecutive_errors = 0
 
     for i in range(1, num_episodes + 1):
         episode_id = f"ep_{i:04d}"
@@ -113,5 +122,18 @@ def run_batch(
             logger.log_episode_summary(summary)
 
         summaries.append(summary)
+
+        if summary.outcome == "error":
+            consecutive_errors += 1
+            if consecutive_errors >= max_consecutive_errors:
+                print(
+                    f"Stopping early after {consecutive_errors} episodes in a row ended in "
+                    f"'error' (even after a retry) — likely a systemic issue (e.g. Groq's "
+                    f"daily quota exhausted), not one-off flakiness. Collected "
+                    f"{len(summaries)}/{num_episodes} episodes this invocation."
+                )
+                break
+        else:
+            consecutive_errors = 0
 
     return summaries

@@ -21,3 +21,8 @@ backoff_max_seconds: 30.0
 # let 2 full 30-step episodes exhaust the whole day's budget on their own. This caps the prompt
 # to the system message + initial observation + the last N step-exchanges.
 history_window_steps: 10
+
+# T14: if this many episodes in a row come back "error" (even after their one in-run retry),
+# stop the batch early instead of burning the rest of --n the same way — a streak this long
+# means something systemic (e.g. quota exhaustion), not one flaky episode.
+max_consecutive_errors: 3
