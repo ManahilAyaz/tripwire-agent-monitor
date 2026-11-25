@@ -11,6 +11,7 @@ from tripwire.agent.react_agent import (
     load_system_prompt,
     map_to_admissible_action,
     parse_reply,
+    rewrite_put_as_move,
     run_episode,
     split_think_action,
 )
@@ -304,6 +305,42 @@ def test_map_to_admissible_action_rejects_same_verb_match_below_threshold():
     assert 0.0 < similarity < 0.8
 
 
+def test_rewrite_put_as_move_handles_in_on_variant():
+    assert rewrite_put_as_move("put egg 2 in/on garbagecan 1") == "move egg 2 to garbagecan 1"
+
+
+def test_rewrite_put_as_move_handles_plain_in_and_on_variants():
+    assert rewrite_put_as_move("put kettle in cabinet 4") == "move kettle to cabinet 4"
+    assert rewrite_put_as_move("put candle on countertop 1") == "move candle to countertop 1"
+
+
+def test_rewrite_put_as_move_returns_none_for_non_put_actions():
+    assert rewrite_put_as_move("take mug 1") is None
+    assert rewrite_put_as_move("go to fridge 1") is None
+
+
+def test_map_to_admissible_action_aliases_put_to_move_when_exact_after_rewrite():
+    admissible = ["move egg 2 to garbagecan 1", "look"]
+    action, mapping, normalized, similarity = map_to_admissible_action(
+        "put egg 2 in/on garbagecan 1", admissible
+    )
+    assert action == "move egg 2 to garbagecan 1"
+    assert mapping == "alias"
+    assert normalized == "move egg 2 to garbagecan 1"
+    assert similarity == 1.0
+
+
+def test_map_to_admissible_action_put_without_matching_move_falls_through_to_none():
+    # no "move" command admissible this turn - the alias rewrite doesn't help, and there's no
+    # same-verb ("put") candidate either, so this stays "none" exactly like before the fix.
+    admissible = ["go to fridge 1", "look"]
+    action, mapping, normalized, similarity = map_to_admissible_action(
+        "put egg 2 in/on garbagecan 1", admissible
+    )
+    assert action == "put egg 2 in/on garbagecan 1"
+    assert mapping == "none"
+
+
 def test_run_episode_maps_invalid_action_and_logs_raw_action_separately():
     steps, summary = run_episode(
         reset_fn=_fake_reset(admissible_commands=["take tomato 1 from fridge 1", "look"]),
@@ -350,6 +387,37 @@ def test_run_episode_leaves_action_unmapped_when_no_same_verb_match_is_close_eno
     assert steps[0].raw_action == "take tomato 4 from fridge 1"
     assert steps[0].action == "take tomato 4 from fridge 1"  # sent unchanged, not "examine..."
     assert steps[0].mapping == "none"
+
+
+def test_run_episode_maps_put_to_move_as_alias():
+    steps, summary = run_episode(
+        reset_fn=_fake_reset(admissible_commands=["move egg 2 to garbagecan 1", "look"]),
+        step_fn=_scripted_step(
+            ("You move the egg 2 to the garbagecan 1.", False, False, ["look"])
+        ),
+        llm_call=_scripted_llm("Action: put egg 2 in/on garbagecan 1"),
+        episode_id="ep_0019b",
+        model="qwen/qwen3.8-27b",
+        max_steps=1,
+    )
+
+    assert steps[0].raw_action == "put egg 2 in/on garbagecan 1"
+    assert steps[0].action == "move egg 2 to garbagecan 1"
+    assert steps[0].mapping == "alias"
+    assert steps[0].similarity == 1.0
+
+
+def test_run_episode_logs_admissible_actions_offered_that_turn():
+    steps, summary = run_episode(
+        reset_fn=_fake_reset(admissible_commands=["look", "go to fridge 1"]),
+        step_fn=_scripted_step(("obs", False, False, ["take mug 1"])),
+        llm_call=_scripted_llm("Action: look"),
+        episode_id="ep_0019c",
+        model="qwen/qwen3.8-27b",
+        max_steps=1,
+    )
+
+    assert steps[0].admissible_actions == ["look", "go to fridge 1"]
 
 
 def test_run_episode_raw_action_equals_action_when_already_admissible():

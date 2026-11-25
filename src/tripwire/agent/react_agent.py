@@ -22,8 +22,9 @@ ACTION_RE = re.compile(r"Action:\s*(.*)", re.IGNORECASE)
 THINK_PREFIX_RE = re.compile(r"^>?\s*think:\s*", re.IGNORECASE)
 PUNCT_RE = re.compile(r"[.,!?;:]")
 FILLER_WORDS = {"over", "the", "a", "an", "please", "now"}
+PUT_AS_MOVE_RE = re.compile(r"^put\s+(.+?)\s+(?:in/on|in|on)\s+(.+)$", re.IGNORECASE)
 
-PROMPT_VERSION = "react_v3"
+PROMPT_VERSION = "react_v3.1"
 
 # configs/prompts/ lives at the repo root, not relative to this installed package - resolved
 # from this file's own location so it works regardless of the caller's cwd (scripts invoke
@@ -117,6 +118,23 @@ def normalize_action(text: str) -> str:
     return " ".join(word for word in text.split() if word not in FILLER_WORDS)
 
 
+def rewrite_put_as_move(raw_action: str) -> str | None:
+    """Rewrite ReAct's "put X in/on Y" / "put X in Y" / "put X on Y" phrasing to ALFWorld's
+    actual placement verb, "move X to Y" - or None if `raw_action` isn't a "put ..." action.
+
+    The few-shot examples (adapted from ysymyth/ReAct) originally taught this "put" phrasing,
+    but current ALFWorld's admissible commands use "move X to Y" instead (confirmed from real
+    pilot_v4 trajectories, e.g. "You move the bread 2 to the countertop 3."). Since
+    `map_to_admissible_action` restricts matches to the same first-word verb, a "put"-verb
+    raw_action could never match a "move"-verb admissible command no matter how close the rest
+    of the text was - this rewrite exists specifically to bridge that one known verb mismatch.
+    """
+    match = PUT_AS_MOVE_RE.match(raw_action.strip())
+    if not match:
+        return None
+    return f"move {match.group(1)} to {match.group(2)}"
+
+
 def map_to_admissible_action(
     raw_action: str, admissible_commands: list[str]
 ) -> tuple[str, str, str, float]:
@@ -127,7 +145,11 @@ def map_to_admissible_action(
       identical to an admissible command once both are normalized (harmless phrasing
       difference, e.g. "go over to the fridge 1" vs "go to fridge 1") - the real admissible
       command is sent, not the normalized text.
-    - `mapping="fuzzy"`: no exact/normalized-exact match, but the closest *same-verb*
+    - `mapping="alias"` (similarity 1.0): `raw_action` used the old ReAct "put X in/on Y"
+      phrasing (see `rewrite_put_as_move`); rewriting it to "move X to Y" and normalizing gave
+      an exact admissible match. Logged separately from `"exact"` since the raw text's own verb
+      ("put") genuinely isn't the command's verb ("move"), unlike a harmless phrasing tweak.
+    - `mapping="fuzzy"`: no exact/normalized-exact/alias match, but the closest *same-verb*
       admissible command (matched on the first word - "take", "go", "heat", etc., compared
       after normalization) scored >= 0.8 similarity on normalized text.
     - `mapping="none"`: no admissible command shares `raw_action`'s verb, or none scored high
@@ -140,7 +162,9 @@ def map_to_admissible_action(
     overall shape), even though they're completely different action types - worse than doing
     nothing, since it quietly substitutes the wrong *kind* of action instead of surfacing the
     mismatch. Restricting candidates to the same first word first, then requiring a high
-    similarity among those, keeps a fuzzy match from ever crossing into a different verb.
+    similarity among those, keeps a fuzzy match from ever crossing into a different verb - which
+    is exactly why the "put"/"move" alias check above has to happen as its own step, before
+    verb-matching, rather than relying on the fuzzy path to bridge it.
     """
     normalized_raw = normalize_action(raw_action)
     if not admissible_commands:
@@ -152,6 +176,13 @@ def map_to_admissible_action(
     for command, normalized_command in normalized_commands.items():
         if normalized_command == normalized_raw:
             return command, "exact", normalized_raw, 1.0
+
+    alias_rewrite = rewrite_put_as_move(raw_action)
+    if alias_rewrite is not None:
+        normalized_alias = normalize_action(alias_rewrite)
+        for command, normalized_command in normalized_commands.items():
+            if normalized_command == normalized_alias:
+                return command, "alias", normalized_alias, 1.0
 
     verb = normalized_raw.split(" ", 1)[0] if normalized_raw else ""
     same_verb_commands = {
@@ -252,6 +283,10 @@ def run_episode(
     while env_step_num < max_steps:
         turn_index += 1
         done_flag, won_flag = False, False
+        # captured before step_fn below reassigns admissible_commands to the *next* turn's
+        # list - this is what the model was actually shown (the "Valid actions:" line) and
+        # what map_to_admissible_action matched against this turn, so it's what gets logged.
+        current_admissible_commands = list(admissible_commands)
         try:
             reply, retry_count = call_with_retry(
                 lambda: llm_call(messages),
@@ -287,7 +322,7 @@ def run_episode(
                 action, mapping, normalized_action, similarity = "look", "none", "", 0.0
             else:
                 action, mapping, normalized_action, similarity = map_to_admissible_action(
-                    raw_action, admissible_commands
+                    raw_action, current_admissible_commands
                 )
             step_thought = think_text if think_capped else thought
             try:
@@ -313,6 +348,7 @@ def run_episode(
                 normalized_action=normalized_action,
                 similarity=similarity,
                 is_think=is_think,
+                admissible_actions=current_admissible_commands,
             )
         )
         messages.append({"role": "assistant", "content": reply})
