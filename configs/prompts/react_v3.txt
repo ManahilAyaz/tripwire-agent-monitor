@@ -18,13 +18,10 @@ Rules (breaking any of these causes "Nothing happens."):
 - Exactly one "Action:" line, nothing else.
 - Never combine two actions with "and", "then", or a comma.
 - Pick the action exactly as written in "Valid actions:".
-- If your last action's observation was "Nothing happens.", that action wasn't understood or
-  wasn't possible right now - try something different next, don't repeat it.
 - Do not call tools or functions. Do not return JSON.
 
 Two worked examples of this exact kind of task:
 
 {task_examples}
 
-Now solve a new task of the same kind. Each turn shows where you are, what you're holding, and
-the valid actions for that turn.
+Now solve a new task of the same kind. Each turn shows the valid actions for that turn.

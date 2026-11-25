@@ -20,9 +20,8 @@ from tripwire.trajectory.schema import EpisodeSummaryRecord, StepRecord
 THOUGHT_RE = re.compile(r"Thought:\s*(.*)", re.IGNORECASE)
 ACTION_RE = re.compile(r"Action:\s*(.*)", re.IGNORECASE)
 THINK_PREFIX_RE = re.compile(r"^>?\s*think:\s*", re.IGNORECASE)
-GO_TO_RE = re.compile(r"^go to (.+)$", re.IGNORECASE)
-TAKE_RE = re.compile(r"^take (.+?) from (.+)$", re.IGNORECASE)
-RELEASE_RE = re.compile(r"^(?:put|move) (.+?) (?:in|on|to) (.+)$", re.IGNORECASE)
+PUNCT_RE = re.compile(r"[.,!?;:]")
+FILLER_WORDS = {"over", "the", "a", "an", "please", "now"}
 
 PROMPT_VERSION = "react_v3"
 
@@ -107,15 +106,34 @@ def split_think_action(action: str) -> tuple[bool, str]:
     return False, action
 
 
-def map_to_admissible_action(raw_action: str, admissible_commands: list[str]) -> tuple[str, str]:
+def normalize_action(text: str) -> str:
+    """Lowercase, strip punctuation, and drop filler words that don't change the action's
+    meaning ("over", "the", "a", "an", "please", "now") - so "go over to the fridge 1" and
+    "go to fridge 1" normalize to the same text instead of being treated as different actions.
+    Object names, numbers, and the prepositions ALFWorld's own vocabulary uses ("to", "from",
+    "in/on", "with") are left alone - this is phrasing cleanup, not paraphrasing.
+    """
+    text = PUNCT_RE.sub("", text.lower())
+    return " ".join(word for word in text.split() if word not in FILLER_WORDS)
+
+
+def map_to_admissible_action(
+    raw_action: str, admissible_commands: list[str]
+) -> tuple[str, str, str, float]:
     """Map a possibly-malformed action to the closest ALFWorld-admissible command.
 
-    Returns `(action, mapping)` where `mapping` is one of:
-    - `"exact"`: `raw_action` was already admissible, unchanged.
-    - `"fuzzy"`: no exact match, but the closest *same-verb* admissible command (matched on
-      the first word - "take", "go", "heat", etc.) scored >= 0.8 similarity.
-    - `"none"`: no admissible command shares `raw_action`'s verb, or none scored high enough -
-      `raw_action` is returned unchanged and sent to ALFWorld as-is.
+    Returns `(action, mapping, normalized_action, similarity)`:
+    - `mapping="exact"` (similarity 1.0): `raw_action` was already admissible, or became
+      identical to an admissible command once both are normalized (harmless phrasing
+      difference, e.g. "go over to the fridge 1" vs "go to fridge 1") - the real admissible
+      command is sent, not the normalized text.
+    - `mapping="fuzzy"`: no exact/normalized-exact match, but the closest *same-verb*
+      admissible command (matched on the first word - "take", "go", "heat", etc., compared
+      after normalization) scored >= 0.8 similarity on normalized text.
+    - `mapping="none"`: no admissible command shares `raw_action`'s verb, or none scored high
+      enough - `raw_action` is returned unchanged and sent to ALFWorld as-is. `similarity` is
+      still the best same-verb candidate's score when one existed, 0.0 otherwise, so a
+      near-miss is visible even when it wasn't accepted.
 
     The same-verb restriction matters: plain string similarity alone can match "take tomato 4
     from fridge 1" to "examine fridge 1" just because they share enough characters (fridge, 1,
@@ -124,33 +142,31 @@ def map_to_admissible_action(raw_action: str, admissible_commands: list[str]) ->
     mismatch. Restricting candidates to the same first word first, then requiring a high
     similarity among those, keeps a fuzzy match from ever crossing into a different verb.
     """
+    normalized_raw = normalize_action(raw_action)
     if not admissible_commands:
-        return raw_action, "none"
+        return raw_action, "none", normalized_raw, 0.0
     if raw_action in admissible_commands:
-        return raw_action, "exact"
-    verb = raw_action.split(" ", 1)[0].lower() if raw_action else ""
-    same_verb_commands = [c for c in admissible_commands if c.split(" ", 1)[0].lower() == verb]
+        return raw_action, "exact", normalized_raw, 1.0
+
+    normalized_commands = {c: normalize_action(c) for c in admissible_commands}
+    for command, normalized_command in normalized_commands.items():
+        if normalized_command == normalized_raw:
+            return command, "exact", normalized_raw, 1.0
+
+    verb = normalized_raw.split(" ", 1)[0] if normalized_raw else ""
+    same_verb_commands = {
+        c: nc for c, nc in normalized_commands.items() if nc.split(" ", 1)[0] == verb
+    }
     if same_verb_commands:
-        match = difflib.get_close_matches(raw_action, same_verb_commands, n=1, cutoff=0.8)
-        if match:
-            return match[0], "fuzzy"
-    return raw_action, "none"
-
-
-def _update_state(location: str, holding: str, executed_action: str) -> tuple[str, str]:
-    """Track "where am I / what am I holding" from the executed action alone (not by parsing
-    observation text, which varies too much to match reliably) - "go to X" updates location,
-    "take X from Y" picks it up, "put X in/on Y" / "move X to Y" sets it back down."""
-    go_to = GO_TO_RE.match(executed_action)
-    if go_to:
-        location = go_to.group(1)
-    take = TAKE_RE.match(executed_action)
-    if take:
-        holding = take.group(1)
-    release = RELEASE_RE.match(executed_action)
-    if release:
-        holding = "nothing"
-    return location, holding
+        best_command, best_score = None, 0.0
+        for command, normalized_command in same_verb_commands.items():
+            score = difflib.SequenceMatcher(None, normalized_raw, normalized_command).ratio()
+            if score > best_score:
+                best_command, best_score = command, score
+        if best_score >= 0.8:
+            return best_command, "fuzzy", normalized_raw, round(best_score, 3)
+        return raw_action, "none", normalized_raw, round(best_score, 3)
+    return raw_action, "none", normalized_raw, 0.0
 
 
 def _now_iso() -> str:
@@ -213,15 +229,16 @@ def run_episode(
             prompt_version=PROMPT_VERSION,
         )
 
+    # No "You are at X / holding Y" line here on purpose: that's not part of standard ReAct,
+    # and telling the agent its own state back to correct for a model that's losing track of
+    # it is really the future correction layer's job (FYP-II), not this baseline agent's.
     system_prompt = load_system_prompt(task_type)
-    location, holding = "unknown", "nothing"
     messages = [
         {"role": "system", "content": system_prompt},
         {
             "role": "user",
             "content": (
                 f"{initial_observation}\nGoal: {task_input}\n"
-                f"You are at: {location}. You are holding: {holding}.\n"
                 f"Valid actions: {', '.join(admissible_commands)}"
             ),
         },
@@ -261,15 +278,17 @@ def run_episode(
         if is_think:
             consecutive_thinks += 1
             action = ""
-            mapping = "none"
+            mapping, normalized_action, similarity = "none", "", 0.0
             observation = "OK."
             step_thought = think_text
         else:
             consecutive_thinks = 0
             if think_capped:
-                action, mapping = "look", "none"
+                action, mapping, normalized_action, similarity = "look", "none", "", 0.0
             else:
-                action, mapping = map_to_admissible_action(raw_action, admissible_commands)
+                action, mapping, normalized_action, similarity = map_to_admissible_action(
+                    raw_action, admissible_commands
+                )
             step_thought = think_text if think_capped else thought
             try:
                 observation, done_flag, won_flag, admissible_commands = step_fn(action)
@@ -277,7 +296,6 @@ def run_episode(
                 outcome = "error"
                 break
             env_step_num += 1
-            location, holding = _update_state(location, holding, action)
 
         timestamp = _now_iso()
         steps.append(
@@ -292,6 +310,8 @@ def run_episode(
                 retry_count=retry_count,
                 raw_action=raw_action,
                 mapping=mapping,
+                normalized_action=normalized_action,
+                similarity=similarity,
                 is_think=is_think,
             )
         )
@@ -301,7 +321,6 @@ def run_episode(
                 "role": "user",
                 "content": (
                     f"Observation: {observation}\n"
-                    f"You are at: {location}. You are holding: {holding}.\n"
                     f"Valid actions: {', '.join(admissible_commands)}\n"
                     "Continue solving the goal."
                 ),

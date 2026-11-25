@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-SCHEMA_VERSION = "1.3"
+SCHEMA_VERSION = "1.4"
 
 
 @dataclass
@@ -34,13 +34,24 @@ class StepRecord:
     (`agent/react_agent.py::run_episode`).
 
     `mapping` (v1.3) says how `action` was derived from `raw_action`: `"exact"` (already an
-    admissible command), `"fuzzy"` (closest same-verb admissible command, similarity >= 0.8 -
-    see `map_to_admissible_action`), or `"none"` (no close-enough same-verb match, so
-    `raw_action` was sent to ALFWorld unchanged - or this step is a think turn, where no
-    mapping was attempted at all). Restricting fuzzy matches to the same first-word verb as
+    admissible command, or became identical to one after normalization - see `normalize_action`
+    and v1.4 below), `"fuzzy"` (closest same-verb admissible command, similarity >= 0.8 on
+    normalized text - see `map_to_admissible_action`), or `"none"` (no close-enough same-verb
+    match, so `raw_action` was sent to ALFWorld unchanged - or this step is a think turn, where
+    no mapping was attempted at all). Restricting fuzzy matches to the same first-word verb as
     `raw_action` exists because plain string-similarity matching could otherwise map a "take"
     action to an unrelated "examine" command just for sharing enough characters, which is worse
     than sending the model's literal (wrong) text and getting "Nothing happens.".
+
+    `normalized_action`/`similarity` (v1.4): `normalized_action` is `raw_action` lowercased,
+    punctuation-stripped, with filler words ("over", "the", "a", "an", "please", "now") removed
+    - this is what harmless-phrasing matches (e.g. "go over to the fridge 1" vs "go to fridge
+    1") are actually compared on, so a genuinely different object/number (e.g. "tomato 4" vs
+    "tomato 1") still isn't treated as the same action. `similarity` is the matched (or best
+    attempted) same-verb candidate's score: 1.0 for `"exact"`, the real ratio for `"fuzzy"`, and
+    for `"none"` either the best same-verb candidate's score (if one existed but fell short of
+    0.8) or 0.0 (no same-verb candidate at all, or no admissible commands, or a think/forced
+    turn where no mapping was attempted).
     """
 
     episode_id: str
@@ -53,6 +64,8 @@ class StepRecord:
     retry_count: int = 0
     raw_action: str = ""
     mapping: str = "none"
+    normalized_action: str = ""
+    similarity: float = 0.0
     is_think: bool = False
     type: str = "step"
 
