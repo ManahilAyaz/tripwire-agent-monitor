@@ -72,7 +72,12 @@ def enforce_max_steps(step: int, max_steps: int) -> None:
         raise MaxStepsExceededError(f"Episode exceeded max_steps cap ({max_steps})")
 
 
-def make_groq_llm(model: str, log_rate_limits: bool = True) -> Callable[[list[dict]], str]:
+def make_groq_llm(
+    model: str,
+    temperature: float = 0.0,
+    max_tokens: int = 300,
+    log_rate_limits: bool = True,
+) -> Callable[[list[dict]], str]:
     """Build a ``llm(messages) -> reply_text`` callable against an OpenAI-compatible API.
 
     Defaults to Groq, reading ``GROQ_API_KEY`` from the environment only (never hard-coded),
@@ -83,6 +88,9 @@ def make_groq_llm(model: str, log_rate_limits: bool = True) -> Callable[[list[di
     ``LLM_BASE_URL``/``LLM_API_KEY`` override the endpoint and key when set (e.g. to point at
     a local Ollama server instead of Groq), which is all a different OpenAI-compatible provider
     needs — Groq stays the default when neither is set.
+
+    ``temperature``/``max_tokens`` come from the caller's agent config (`configs/agent*.yaml`)
+    rather than being fixed here, so a config change doesn't need a code change.
 
     When ``log_rate_limits`` is true (the default), each call prints the provider's own
     ``x-ratelimit-*`` response headers if present — Groq's live, authoritative remaining-quota
@@ -105,7 +113,7 @@ def make_groq_llm(model: str, log_rate_limits: bool = True) -> Callable[[list[di
 
     def llm(messages: list[dict]) -> str:
         raw_response = client.chat.completions.with_raw_response.create(
-            model=model, messages=messages, temperature=0.2, max_tokens=300
+            model=model, messages=messages, temperature=temperature, max_tokens=max_tokens
         )
         if log_rate_limits:
             limits = {k: v for k, v in raw_response.headers.items() if "ratelimit" in k.lower()}

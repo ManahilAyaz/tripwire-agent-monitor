@@ -9,6 +9,7 @@ from tripwire.agent.groq_client import (
     RetryExhaustedError,
     call_with_retry,
     enforce_max_steps,
+    make_groq_llm,
 )
 
 
@@ -84,3 +85,64 @@ def test_max_steps_cap_stops_loop():
 
     with pytest.raises(MaxStepsExceededError):
         enforce_max_steps(max_steps, max_steps)
+
+
+class _FakeRawResponse:
+    def __init__(self, content: str):
+        self._content = content
+        self.headers: dict[str, str] = {}
+
+    def parse(self):
+        choice = type("Choice", (), {"message": type("Msg", (), {"content": self._content})()})()
+        return type("Response", (), {"choices": [choice]})()
+
+
+class _FakeCompletions:
+    def __init__(self, calls: list[dict]):
+        self._calls = calls
+
+    class _RawResponseWrapper:
+        def __init__(self, calls):
+            self._calls = calls
+
+        def create(self, **kwargs):
+            self._calls.append(kwargs)
+            return _FakeRawResponse("Action: look")
+
+    @property
+    def with_raw_response(self):
+        return self._RawResponseWrapper(self._calls)
+
+
+class _FakeOpenAI:
+    """Stands in for openai.OpenAI so make_groq_llm's temperature/max_tokens plumbing can be
+    checked without a real network call."""
+
+    last_calls: list[dict] = []
+
+    def __init__(self, base_url=None, api_key=None):
+        _FakeOpenAI.last_calls = []
+        self.chat = type("Chat", (), {"completions": _FakeCompletions(_FakeOpenAI.last_calls)})()
+
+
+def test_make_groq_llm_passes_temperature_and_max_tokens_from_config(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key")
+    monkeypatch.setattr("openai.OpenAI", _FakeOpenAI)
+
+    llm = make_groq_llm("some-model", temperature=0.3, max_tokens=123, log_rate_limits=False)
+    llm([{"role": "user", "content": "hi"}])
+
+    assert len(_FakeOpenAI.last_calls) == 1
+    assert _FakeOpenAI.last_calls[0]["temperature"] == 0.3
+    assert _FakeOpenAI.last_calls[0]["max_tokens"] == 123
+
+
+def test_make_groq_llm_defaults_match_agent_config_defaults(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key")
+    monkeypatch.setattr("openai.OpenAI", _FakeOpenAI)
+
+    llm = make_groq_llm("some-model", log_rate_limits=False)
+    llm([{"role": "user", "content": "hi"}])
+
+    assert _FakeOpenAI.last_calls[0]["temperature"] == 0.0
+    assert _FakeOpenAI.last_calls[0]["max_tokens"] == 300

@@ -26,7 +26,9 @@ def main() -> None:
         cfg = yaml.safe_load(f)
 
     env = make_env(args.config)
-    llm_call = make_groq_llm(cfg["model"])
+    llm_call = make_groq_llm(
+        cfg["model"], temperature=cfg.get("temperature", 0.0), max_tokens=cfg.get("max_tokens", 300)
+    )
 
     steps, summary = run_episode(
         reset_fn=lambda: reset_episode(env),
