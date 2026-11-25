@@ -19,6 +19,8 @@ def _summary(episode_id, outcome, num_steps=1):
         max_steps=5,
         start_timestamp="2026-11-22T10:00:00.000Z",
         end_timestamp="2026-11-22T10:00:05.000Z",
+        task_type="put",
+        prompt_version="react_v3",
     )
 
 

@@ -4,9 +4,10 @@ import re
 from pathlib import Path
 
 DOC = (Path(__file__).parent.parent / "docs" / "log_schema.md").read_text(encoding="utf-8")
-STEP_KEYS = {"type", "episode_id", "step", "timestamp", "thought", "action", "observation", "parse_ok", "retry_count", "raw_action"}
+STEP_KEYS = {"type", "episode_id", "step", "timestamp", "thought", "action", "observation", "parse_ok", "retry_count", "raw_action", "is_think"}
 SUMMARY_KEYS = {"type", "schema_version", "episode_id", "task_id", "task_input", "initial_observation",
-                "num_steps", "outcome", "model", "max_steps", "start_timestamp", "end_timestamp"}
+                "num_steps", "outcome", "model", "max_steps", "start_timestamp", "end_timestamp",
+                "task_type", "prompt_version"}
 OUTCOMES = {"success", "failure", "max_steps", "error"}
 TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
 
@@ -29,7 +30,7 @@ def test_step_examples_match_schema():
 def test_summary_example_matches_schema():
     (s,) = lines("jsonl-summary")
     assert set(s) == SUMMARY_KEYS
-    assert s["type"] == "episode_summary" and s["schema_version"] == "1.1"
+    assert s["type"] == "episode_summary" and s["schema_version"] == "1.2"
     assert s["outcome"] in OUTCOMES
     assert TS.match(s["start_timestamp"]) and TS.match(s["end_timestamp"])
 
