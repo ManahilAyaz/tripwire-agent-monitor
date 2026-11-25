@@ -1,4 +1,4 @@
-# Trajectory log schema (JSONL), v1.2
+# Trajectory log schema (JSONL), v1.3
 
 Shared contract between Kashmala (logger, runner), Manahil (representations, Layer 2, eval) and Aqsa (rules).
 Change it only by PR, agreed by all three. If you change it, bump `schema_version`.
@@ -26,14 +26,15 @@ Change it only by PR, agreed by all three. If you change it, bump `schema_versio
 | `observation` | str | the environment's reply to that action. The fixed string `"OK."` for a think turn |
 | `parse_ok` | bool | `false` if the model reply had no valid `Action:` and the logger substituted `look` |
 | `retry_count` | int | API retries needed for this step's LLM call (0 if none) |
-| `raw_action` | str | (v1.1) what the model actually produced, before mapping to `action`. Equal to `action` when no mapping was needed - kept so an invalid/invented action is visible data, not silently corrected away |
+| `raw_action` | str | (v1.1) what the model actually produced, before mapping to `action`. Equal to `action` when `mapping` is `"exact"` |
+| `mapping` | str | (v1.3) `"exact"` (`raw_action` was already admissible), `"fuzzy"` (mapped to the closest same-verb admissible command, similarity >= 0.8), or `"none"` (no same-verb match good enough - `raw_action` sent to ALFWorld unchanged - or this is a think turn, where no mapping is attempted) |
 | `is_think` | bool | (v1.2) `true` for a ReAct-style "think: ..." reasoning turn - never sent to ALFWorld, doesn't count toward `max_steps`/ALFWorld's own step cap. Capped at 2 consecutive; a 3rd in a row is forced into a real action instead (see Decisions #8) |
 
 ```jsonl-step
-{"type":"step","episode_id":"ep_0001","step":1,"timestamp":"2026-11-22T10:14:51.500Z","thought":"To solve the task, I need to find the potato, then heat it, then put it in sidetable.","action":"","observation":"OK.","parse_ok":true,"retry_count":0,"raw_action":"think: To solve the task, I need to find the potato, then heat it, then put it in sidetable.","is_think":true}
-{"type":"step","episode_id":"ep_0001","step":2,"timestamp":"2026-11-22T10:14:52.101Z","thought":"","action":"go to fridge 1","observation":"You arrive at fridge 1. The fridge 1 is closed.","parse_ok":true,"retry_count":0,"raw_action":"go to fridge 1","is_think":false}
-{"type":"step","episode_id":"ep_0001","step":3,"timestamp":"2026-11-22T10:14:54.380Z","thought":"","action":"open fridge 1","observation":"You open the fridge 1. In it, you see a potato 1.","parse_ok":true,"retry_count":0,"raw_action":"open fridge 1","is_think":false}
-{"type":"step","episode_id":"ep_0001","step":4,"timestamp":"2026-11-22T10:14:57.012Z","thought":"","action":"take potato 1 from fridge 1","observation":"You pick up the potato 1 from the fridge 1.","parse_ok":true,"retry_count":1,"raw_action":"take the potato 1 from the fridge 1","is_think":false}
+{"type":"step","episode_id":"ep_0001","step":1,"timestamp":"2026-11-22T10:14:51.500Z","thought":"To solve the task, I need to find the potato, then heat it, then put it in sidetable.","action":"","observation":"OK.","parse_ok":true,"retry_count":0,"raw_action":"think: To solve the task, I need to find the potato, then heat it, then put it in sidetable.","mapping":"none","is_think":true}
+{"type":"step","episode_id":"ep_0001","step":2,"timestamp":"2026-11-22T10:14:52.101Z","thought":"","action":"go to fridge 1","observation":"You arrive at fridge 1. The fridge 1 is closed.","parse_ok":true,"retry_count":0,"raw_action":"go to fridge 1","mapping":"exact","is_think":false}
+{"type":"step","episode_id":"ep_0001","step":3,"timestamp":"2026-11-22T10:14:54.380Z","thought":"","action":"open fridge 1","observation":"You open the fridge 1. In it, you see a potato 1.","parse_ok":true,"retry_count":0,"raw_action":"open fridge 1","mapping":"exact","is_think":false}
+{"type":"step","episode_id":"ep_0001","step":4,"timestamp":"2026-11-22T10:14:57.012Z","thought":"","action":"take potato 1 from fridge 1","observation":"You pick up the potato 1 from the fridge 1.","parse_ok":true,"retry_count":1,"raw_action":"take the potato 1 from the fridge 1","mapping":"fuzzy","is_think":false}
 ```
 
 ## Episode summary line (required keys)
@@ -63,7 +64,7 @@ Change it only by PR, agreed by all three. If you change it, bump `schema_versio
 `failure` and `max_steps` both count as "task failed" in analysis. `outcome` says how the episode ended; the failure *category* (why it went wrong) comes from the taxonomy and annotations, not from this field.
 
 ```jsonl-summary
-{"type":"episode_summary","schema_version":"1.2","episode_id":"ep_0001","task_id":"pick_heat_then_place_in_recep-Potato-None-SideTable-10","task_input":"heat some potato and put it in sidetable","initial_observation":"You are in the middle of a room. Looking quickly around you, you see a fridge 1, a microwave 1, a sidetable 1.","num_steps":12,"outcome":"success","model":"qwen/qwen3.8-27b","max_steps":40,"start_timestamp":"2026-11-22T10:14:50.000Z","end_timestamp":"2026-11-22T10:15:40.200Z","task_type":"heat","prompt_version":"react_v3"}
+{"type":"episode_summary","schema_version":"1.3","episode_id":"ep_0001","task_id":"pick_heat_then_place_in_recep-Potato-None-SideTable-10","task_input":"heat some potato and put it in sidetable","initial_observation":"You are in the middle of a room. Looking quickly around you, you see a fridge 1, a microwave 1, a sidetable 1.","num_steps":12,"outcome":"success","model":"qwen/qwen3.8-27b","max_steps":40,"start_timestamp":"2026-11-22T10:14:50.000Z","end_timestamp":"2026-11-22T10:15:40.200Z","task_type":"heat","prompt_version":"react_v3"}
 ```
 The example lines are illustrative. Replace them with real lines once the T12 logger exists.
 
@@ -76,3 +77,4 @@ The example lines are illustrative. Replace them with real lines once the T12 lo
 6. Added by Manahil, please confirm: `type` on every line, `parse_ok`, `initial_observation`, `model`, `max_steps`, `schema_version`.
 7. **v1.1.** Added `raw_action` to the step line: the pilot runs showed a small local model (Llama 3.1 8B) frequently producing invalid/invented actions that ALFWorld silently turns into "Nothing happens." The agent now maps these to the closest admissible command so the episode can continue, but logging only the corrected `action` would erase exactly the kind of failure signal this project exists to monitor - so `raw_action` keeps the model's real, uncorrected output alongside it.
 8. **v1.2.** Added task-type-matched ReAct few-shot prompting (`configs/prompts/`) to raise the pilot success rate off its 10% (4/40) baseline. Two new fields: `task_type` (summary) picks which few-shot examples an episode was prompted with; `is_think` (step) marks a ReAct-style "think: ..." reasoning turn, which is never sent to ALFWorld and doesn't count toward `max_steps` - so `num_steps` now means "real environment actions" specifically, not "step lines in the file" (a think turn is still its own step line, just excluded from that count). `prompt_version` (summary) records which prompt template (`configs/prompts/react_v3.txt`) built the episode, for comparing pilot batches collected under different prompt versions later.
+9. **v1.3.** A 4-episode spot-check under v1.2 found `map_to_admissible_action` could map a "take" action to an unrelated "examine" command purely on string similarity (e.g. "take tomato 4 from fridge 1" -> "examine fridge 1"), since plain fuzzy-matching doesn't know "take" and "examine" are different kinds of action. Fixed by restricting fuzzy matches to admissible commands sharing the same first word (verb) as `raw_action`, and raising the acceptance threshold to similarity >= 0.8; anything that still doesn't clear both is sent to ALFWorld unchanged (`mapping: "none"`) instead of being silently substituted. New `mapping` step field (`"exact"`/`"fuzzy"`/`"none"`) records which case applied, since `raw_action` vs `action` alone doesn't say *why* they differ (or don't).

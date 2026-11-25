@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-SCHEMA_VERSION = "1.2"
+SCHEMA_VERSION = "1.3"
 
 
 @dataclass
@@ -32,6 +32,15 @@ class StepRecord:
     `observation` is the fixed stand-in `"OK."`) and don't count toward `max_steps`/ALFWorld's
     own step cap, which only bounds real environment actions
     (`agent/react_agent.py::run_episode`).
+
+    `mapping` (v1.3) says how `action` was derived from `raw_action`: `"exact"` (already an
+    admissible command), `"fuzzy"` (closest same-verb admissible command, similarity >= 0.8 -
+    see `map_to_admissible_action`), or `"none"` (no close-enough same-verb match, so
+    `raw_action` was sent to ALFWorld unchanged - or this step is a think turn, where no
+    mapping was attempted at all). Restricting fuzzy matches to the same first-word verb as
+    `raw_action` exists because plain string-similarity matching could otherwise map a "take"
+    action to an unrelated "examine" command just for sharing enough characters, which is worse
+    than sending the model's literal (wrong) text and getting "Nothing happens.".
     """
 
     episode_id: str
@@ -43,6 +52,7 @@ class StepRecord:
     parse_ok: bool = True
     retry_count: int = 0
     raw_action: str = ""
+    mapping: str = "none"
     is_think: bool = False
     type: str = "step"
 

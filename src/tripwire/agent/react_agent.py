@@ -107,19 +107,34 @@ def split_think_action(action: str) -> tuple[bool, str]:
     return False, action
 
 
-def map_to_admissible_action(raw_action: str, admissible_commands: list[str]) -> str:
+def map_to_admissible_action(raw_action: str, admissible_commands: list[str]) -> tuple[str, str]:
     """Map a possibly-malformed action to the closest ALFWorld-admissible command.
 
-    ALFWorld only executes an exact string match from `infos["admissible_commands"]` - a
-    weaker model's output (wrong object number, invented compound action, stray wording)
-    would otherwise silently return "Nothing happens." forever, no matter how many retries.
-    Falls back to `raw_action` unchanged if there is nothing to match against (or already an
-    exact match), so this never makes a correct action worse.
+    Returns `(action, mapping)` where `mapping` is one of:
+    - `"exact"`: `raw_action` was already admissible, unchanged.
+    - `"fuzzy"`: no exact match, but the closest *same-verb* admissible command (matched on
+      the first word - "take", "go", "heat", etc.) scored >= 0.8 similarity.
+    - `"none"`: no admissible command shares `raw_action`'s verb, or none scored high enough -
+      `raw_action` is returned unchanged and sent to ALFWorld as-is.
+
+    The same-verb restriction matters: plain string similarity alone can match "take tomato 4
+    from fridge 1" to "examine fridge 1" just because they share enough characters (fridge, 1,
+    overall shape), even though they're completely different action types - worse than doing
+    nothing, since it quietly substitutes the wrong *kind* of action instead of surfacing the
+    mismatch. Restricting candidates to the same first word first, then requiring a high
+    similarity among those, keeps a fuzzy match from ever crossing into a different verb.
     """
-    if not admissible_commands or raw_action in admissible_commands:
-        return raw_action
-    match = difflib.get_close_matches(raw_action, admissible_commands, n=1, cutoff=0.0)
-    return match[0] if match else raw_action
+    if not admissible_commands:
+        return raw_action, "none"
+    if raw_action in admissible_commands:
+        return raw_action, "exact"
+    verb = raw_action.split(" ", 1)[0].lower() if raw_action else ""
+    same_verb_commands = [c for c in admissible_commands if c.split(" ", 1)[0].lower() == verb]
+    if same_verb_commands:
+        match = difflib.get_close_matches(raw_action, same_verb_commands, n=1, cutoff=0.8)
+        if match:
+            return match[0], "fuzzy"
+    return raw_action, "none"
 
 
 def _update_state(location: str, holding: str, executed_action: str) -> tuple[str, str]:
@@ -246,13 +261,15 @@ def run_episode(
         if is_think:
             consecutive_thinks += 1
             action = ""
+            mapping = "none"
             observation = "OK."
             step_thought = think_text
         else:
             consecutive_thinks = 0
-            action = "look" if think_capped else map_to_admissible_action(
-                raw_action, admissible_commands
-            )
+            if think_capped:
+                action, mapping = "look", "none"
+            else:
+                action, mapping = map_to_admissible_action(raw_action, admissible_commands)
             step_thought = think_text if think_capped else thought
             try:
                 observation, done_flag, won_flag, admissible_commands = step_fn(action)
@@ -274,6 +291,7 @@ def run_episode(
                 parse_ok=parse_ok,
                 retry_count=retry_count,
                 raw_action=raw_action,
+                mapping=mapping,
                 is_think=is_think,
             )
         )

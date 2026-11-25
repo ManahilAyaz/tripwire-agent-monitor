@@ -235,31 +235,68 @@ def test_run_episode_bounds_message_history_to_window():
 
 def test_map_to_admissible_action_passes_through_exact_match():
     admissible = ["go to fridge 1", "look"]
-    assert map_to_admissible_action("go to fridge 1", admissible) == "go to fridge 1"
+    assert map_to_admissible_action("go to fridge 1", admissible) == ("go to fridge 1", "exact")
 
 
-def test_map_to_admissible_action_maps_to_closest_command():
+def test_map_to_admissible_action_maps_to_closest_same_verb_command():
     admissible = ["take mug 1 from countertop 1", "go to fridge 1", "look"]
-    mapped = map_to_admissible_action("take the mug 1 from the countertop 1.", admissible)
+    # similarity ~0.86 >= 0.8, same verb ("take") - maps
+    mapped, mapping = map_to_admissible_action("take the mug 1 from the countertop 1.", admissible)
     assert mapped == "take mug 1 from countertop 1"
+    assert mapping == "fuzzy"
 
 
 def test_map_to_admissible_action_passes_through_when_no_admissible_commands():
-    assert map_to_admissible_action("do something weird", []) == "do something weird"
+    assert map_to_admissible_action("do something weird", []) == ("do something weird", "none")
+
+
+def test_map_to_admissible_action_never_crosses_into_a_different_verb():
+    # "take tomato 4 from fridge 1" has no "take ..." admissible candidate here - must not
+    # fall back to "examine fridge 1" just because the strings share characters.
+    admissible = ["examine fridge 1", "go to fridge 1", "look"]
+    mapped, mapping = map_to_admissible_action("take tomato 4 from fridge 1", admissible)
+    assert mapped == "take tomato 4 from fridge 1"
+    assert mapping == "none"
+
+
+def test_map_to_admissible_action_rejects_same_verb_match_below_threshold():
+    # same verb ("go"), but similarity ~0.76 < 0.8 - left unmapped, not silently corrected.
+    admissible = ["go to fridge 1", "look"]
+    mapped, mapping = map_to_admissible_action("go over to the fridge 1", admissible)
+    assert mapped == "go over to the fridge 1"
+    assert mapping == "none"
 
 
 def test_run_episode_maps_invalid_action_and_logs_raw_action_separately():
     steps, summary = run_episode(
-        reset_fn=_fake_reset(admissible_commands=["go to fridge 1", "look"]),
-        step_fn=_scripted_step(("You arrive at fridge 1.", False, False, ["open fridge 1"])),
-        llm_call=_scripted_llm("Thought: check the fridge\nAction: go over to the fridge 1"),
+        reset_fn=_fake_reset(admissible_commands=["take mug 1 from countertop 1", "look"]),
+        step_fn=_scripted_step(("You pick up the mug.", False, False, ["look"])),
+        llm_call=_scripted_llm(
+            "Thought: get the mug\nAction: take the mug 1 from the countertop 1."
+        ),
         episode_id="ep_0010",
         model="qwen/qwen3.8-27b",
         max_steps=1,
     )
 
-    assert steps[0].raw_action == "go over to the fridge 1"
-    assert steps[0].action == "go to fridge 1"
+    assert steps[0].raw_action == "take the mug 1 from the countertop 1"  # trailing "." stripped
+    assert steps[0].action == "take mug 1 from countertop 1"
+    assert steps[0].mapping == "fuzzy"
+
+
+def test_run_episode_leaves_action_unmapped_when_no_same_verb_match_is_close_enough():
+    steps, summary = run_episode(
+        reset_fn=_fake_reset(admissible_commands=["examine fridge 1", "go to fridge 1", "look"]),
+        step_fn=_scripted_step(("Nothing happens.", False, False, ["look"])),
+        llm_call=_scripted_llm("Thought: grab it\nAction: take tomato 4 from fridge 1"),
+        episode_id="ep_0017b",
+        model="qwen/qwen3.8-27b",
+        max_steps=1,
+    )
+
+    assert steps[0].raw_action == "take tomato 4 from fridge 1"
+    assert steps[0].action == "take tomato 4 from fridge 1"  # sent unchanged, not "examine..."
+    assert steps[0].mapping == "none"
 
 
 def test_run_episode_raw_action_equals_action_when_already_admissible():
@@ -400,6 +437,7 @@ def test_run_episode_caps_consecutive_thinks_and_forces_a_real_action():
     assert [s.is_think for s in steps] == [True, True, False]
     # the 3rd think is overridden into a real action instead of being honored
     assert steps[2].action == "look"
+    assert steps[2].mapping == "none"  # forced override, not a real match attempt
     assert steps[2].raw_action == "think: three - trying to stall again"
     assert summary.num_steps == 1
     assert summary.outcome == "max_steps"
