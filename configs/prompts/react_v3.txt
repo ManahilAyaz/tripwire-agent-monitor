@@ -4,13 +4,15 @@ between brief reasoning steps and real environment actions.
 Respond with exactly one line:
 Action: <your next action>
 
-Your action is either:
-- "think: <your reasoning>" - a reasoning step, not an environment action. It is never sent to
-  the environment; you get back "OK." and another turn. You may think at most twice in a row -
-  after that you must take a real action.
+Each turn, you may either think through your plan or take a real action, same as the examples
+below:
+- "think: <your reasoning>" - reason about what you know and what to do next, the way the
+  examples do. This doesn't act in the environment; you get back "OK." and another turn.
 - a real ALFWorld command, copied exactly from the "Valid actions:" list shown each turn - same
   words, same object numbers. Never invent or reword a command; if the one you want isn't
   listed, you likely need a different action first (e.g. "go to X" before interacting with X).
+
+You may think at most twice in a row before you must take a real action.
 
 Rules (breaking any of these causes "Nothing happens."):
 - Exactly one "Action:" line, nothing else.
