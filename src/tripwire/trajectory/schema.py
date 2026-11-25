@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 
 
 @dataclass
@@ -26,6 +26,12 @@ class StepRecord:
     instead of only the corrected one preserves a real failure-mode signal — a model saying
     an invalid/invented action is itself something Tripwire exists to monitor, not noise to
     silently discard.
+
+    `is_think` (v1.2) is True for a ReAct-style "think: ..." turn — reasoning the agent chose
+    to do out loud instead of acting. These are never sent to ALFWorld (`action` is `""` and
+    `observation` is the fixed stand-in `"OK."`) and don't count toward `max_steps`/ALFWorld's
+    own step cap, which only bounds real environment actions
+    (`agent/react_agent.py::run_episode`).
     """
 
     episode_id: str
@@ -37,6 +43,7 @@ class StepRecord:
     parse_ok: bool = True
     retry_count: int = 0
     raw_action: str = ""
+    is_think: bool = False
     type: str = "step"
 
     def to_dict(self) -> dict:
@@ -61,6 +68,8 @@ class EpisodeSummaryRecord:
     max_steps: int
     start_timestamp: str
     end_timestamp: str
+    task_type: str
+    prompt_version: str
     type: str = "episode_summary"
     schema_version: str = SCHEMA_VERSION
 

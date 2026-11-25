@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tripwire.env.alfworld_env import gamefile_to_task_id, split_observation_and_goal
+from tripwire.env.alfworld_env import detect_task_type, gamefile_to_task_id, split_observation_and_goal
 
 
 def test_splits_room_description_from_goal():
@@ -42,3 +42,23 @@ def test_gamefile_to_task_id_handles_windows_style_backslashes():
     assert gamefile_to_task_id(path) == (
         "pick_and_place_simple-Mug-None-CoffeeMachine-1/trial_T20190908"
     )
+
+
+def test_detect_task_type_maps_each_known_prefix():
+    cases = {
+        "pick_and_place_simple-Book-None-Sofa-209": "put",
+        "pick_and_place_with_movable_recep-Spoon-Bowl-Drawer-5": "put",
+        "pick_clean_then_place_in_recep-Cloth-None-Drawer-427": "clean",
+        "pick_heat_then_place_in_recep-Potato-None-SideTable-10": "heat",
+        "pick_cool_then_place_in_recep-Lettuce-None-Fridge-3": "cool",
+        "pick_two_obj_and_place-CreditCard-None-Dresser-7": "puttwo",
+        "look_at_obj_in_light-Pen-None-DeskLamp-2": "examine",
+    }
+    for folder, expected in cases.items():
+        path = f"/root/.cache/alfworld/json_2.1.1/train/{folder}/trial_T1/game.tw-pddl"
+        assert detect_task_type(path) == expected
+
+
+def test_detect_task_type_falls_back_to_put_for_unrecognized_prefix():
+    path = "/root/.cache/alfworld/json_2.1.1/train/some_future_task_type-X-Y-Z-1/trial_T1/game.tw-pddl"
+    assert detect_task_type(path) == "put"

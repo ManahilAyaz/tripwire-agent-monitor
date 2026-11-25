@@ -15,6 +15,7 @@
 # script/T03 schema doc, which still reference Qwen specifically.
 model: "qwen/qwen3.8-27b"
 temperature: 0.0
+max_tokens: 300
 max_steps: 30
 
 # T13: retry/backoff on Groq 429/5xx

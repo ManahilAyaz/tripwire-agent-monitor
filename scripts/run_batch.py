@@ -10,9 +10,10 @@ import argparse
 import yaml
 
 from tripwire.agent.groq_client import make_groq_llm
+from tripwire.agent.react_agent import example_task_inputs
 from tripwire.env.alfworld_env import make_env, reset_episode, step_episode
 from tripwire.paths import resolve_config_path
-from tripwire.runner.batch_runner import run_batch
+from tripwire.runner.batch_runner import avoid_example_tasks, run_batch
 
 
 def main() -> None:
@@ -28,10 +29,12 @@ def main() -> None:
         cfg = yaml.safe_load(f)
 
     env = make_env(args.config)
-    llm_call = make_groq_llm(cfg["model"])
+    llm_call = make_groq_llm(
+        cfg["model"], temperature=cfg.get("temperature", 0.0), max_tokens=cfg.get("max_tokens", 300)
+    )
 
     summaries = run_batch(
-        reset_fn=lambda: reset_episode(env),
+        reset_fn=avoid_example_tasks(lambda: reset_episode(env), example_task_inputs()),
         step_fn=lambda action: step_episode(env, action),
         llm_call=llm_call,
         model=cfg["model"],

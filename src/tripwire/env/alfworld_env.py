@@ -49,18 +49,51 @@ def gamefile_to_task_id(gamefile_path: str) -> str:
     return "/".join(parts[-3:-1])
 
 
-def reset_episode(env: Any) -> tuple[str, str, str, list[str]]:
+# ALFWorld's own task-type prefixes (alfworld/agents/data/preprocess_data.py / ALFRED's
+# gen/constants.py), in the order its own folder names use them. "put" is also the fallback
+# for the one ALFRED type with no matching few-shot example in the ReAct prompt set
+# (pick_and_place_with_movable_recep) - closer to a plain pick-and-place than to any other
+# bucket, so it borrows that one's examples rather than getting none.
+TASK_TYPE_PREFIXES: dict[str, str] = {
+    "pick_and_place_simple": "put",
+    "pick_and_place_with_movable_recep": "put",
+    "pick_clean_then_place_in_recep": "clean",
+    "pick_heat_then_place_in_recep": "heat",
+    "pick_cool_then_place_in_recep": "cool",
+    "pick_two_obj_and_place": "puttwo",
+    "look_at_obj_in_light": "examine",
+}
+
+
+def detect_task_type(gamefile_path: str) -> str:
+    """Map a gamefile path to one of the ReAct few-shot buckets (configs/prompts/).
+
+    Matches on the folder name's task-type prefix (the part before the first "-"), e.g.
+    "pick_heat_then_place_in_recep-Potato-None-SideTable-10" -> "heat". Falls back to "put"
+    (the most generic bucket) for anything unrecognized, so an unexpected task type still gets
+    *some* task-type-matched examples instead of crashing.
+    """
+    folder_name = gamefile_path.replace("\\", "/").rstrip("/").split("/")[-3]
+    prefix = folder_name.split("-")[0]
+    return TASK_TYPE_PREFIXES.get(prefix, "put")
+
+
+def reset_episode(env: Any) -> tuple[str, str, str, list[str], str]:
     """Reset the env for a new episode.
 
-    Returns (initial_observation, task_input, task_id, admissible_commands) - the last is
-    ALFWorld's own list of the only commands it will actually accept right now, which the
-    agent uses to avoid inventing invalid actions (see react_agent.map_to_admissible_action).
+    Returns (initial_observation, task_input, task_id, admissible_commands, task_type) -
+    `admissible_commands` is ALFWorld's own list of the only commands it will actually accept
+    right now, which the agent uses to avoid inventing invalid actions (see
+    react_agent.map_to_admissible_action); `task_type` picks which task-type-matched few-shot
+    examples the agent is prompted with (see react_agent.load_task_examples).
     """
     obs, infos = env.reset()
     initial_observation, task_input = split_observation_and_goal(obs[0])
-    task_id = gamefile_to_task_id(infos["extra.gamefile"][0])
+    gamefile = infos["extra.gamefile"][0]
+    task_id = gamefile_to_task_id(gamefile)
     admissible_commands = infos["admissible_commands"][0]
-    return initial_observation, task_input, task_id, admissible_commands
+    task_type = detect_task_type(gamefile)
+    return initial_observation, task_input, task_id, admissible_commands, task_type
 
 
 def step_episode(env: Any, action: str) -> tuple[str, bool, bool, list[str]]:

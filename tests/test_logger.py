@@ -42,6 +42,8 @@ def _write_sample_episode(tmp_path, episode_id="ep_test_0001"):
                 max_steps=30,
                 start_timestamp="2026-11-22T10:00:00.000Z",
                 end_timestamp="2026-11-22T10:00:05.000Z",
+                task_type="clean",
+                prompt_version="react_v3",
             )
         )
         return logger.path

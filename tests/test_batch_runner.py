@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from tripwire.runner.batch_runner import is_episode_done, run_batch
+import pytest
+
+from tripwire.runner.batch_runner import avoid_example_tasks, is_episode_done, run_batch
 from tripwire.trajectory.logger import TrajectoryLogger, read_jsonl
 from tripwire.trajectory.schema import EpisodeSummaryRecord, StepRecord
 
@@ -19,6 +21,8 @@ def _summary(episode_id, outcome, num_steps=1):
         max_steps=5,
         start_timestamp="2026-11-22T10:00:00.000Z",
         end_timestamp="2026-11-22T10:00:05.000Z",
+        task_type="put",
+        prompt_version="react_v3",
     )
 
 
@@ -39,6 +43,38 @@ def _write_episode_file(output_dir, episode_id, outcome, with_summary=True):
         if with_summary:
             logger.log_episode_summary(_summary(episode_id, outcome))
     return output_dir / f"{episode_id}.jsonl"
+
+
+def test_avoid_example_tasks_passes_through_a_clean_task():
+    reset_fn = avoid_example_tasks(
+        lambda: ("obs", "put the mug in the sink.", "task_x"),
+        excluded_task_inputs={"put some spraybottle on toilet."},
+    )
+    assert reset_fn() == ("obs", "put the mug in the sink.", "task_x")
+
+
+def test_avoid_example_tasks_resamples_past_an_excluded_task():
+    results = iter(
+        [
+            ("obs", "put some spraybottle on toilet.", "task_example"),
+            ("obs2", "put the mug in the sink.", "task_clean"),
+        ]
+    )
+    reset_fn = avoid_example_tasks(
+        lambda: next(results),
+        excluded_task_inputs={"put some spraybottle on toilet."},
+    )
+    assert reset_fn() == ("obs2", "put the mug in the sink.", "task_clean")
+
+
+def test_avoid_example_tasks_gives_up_after_max_resamples():
+    reset_fn = avoid_example_tasks(
+        lambda: ("obs", "put some spraybottle on toilet.", "task_example"),
+        excluded_task_inputs={"put some spraybottle on toilet."},
+        max_resamples=3,
+    )
+    with pytest.raises(RuntimeError):
+        reset_fn()
 
 
 def test_is_episode_done_true_for_real_outcomes(tmp_path):

@@ -5,7 +5,15 @@ from __future__ import annotations
 
 import pytest
 
-from tripwire.agent.react_agent import map_to_admissible_action, parse_reply, run_episode
+from tripwire.agent.react_agent import (
+    PROMPT_VERSION,
+    example_task_inputs,
+    load_system_prompt,
+    map_to_admissible_action,
+    parse_reply,
+    run_episode,
+    split_think_action,
+)
 
 
 def test_parses_well_formed_reply():
@@ -43,9 +51,10 @@ def _fake_reset(
     task_input="do a thing",
     task_id="task_abc",
     admissible_commands=None,
+    task_type="put",
 ):
     commands = admissible_commands if admissible_commands is not None else []
-    return lambda: (initial_observation, task_input, task_id, commands)
+    return lambda: (initial_observation, task_input, task_id, commands, task_type)
 
 
 def _scripted_step(*results):
@@ -284,6 +293,147 @@ def test_run_episode_includes_valid_actions_in_prompt():
     )
 
     assert "Valid actions: look, go to fridge 1" in seen_messages[0]
+
+
+def test_split_think_action_detects_think_prefix():
+    is_think, content = split_think_action("think: I should check the fridge first.")
+    assert is_think is True
+    assert content == "I should check the fridge first."
+
+
+def test_split_think_action_tolerates_literal_transcript_prefix():
+    # The few-shot examples show "> think: ..." - the model sometimes echoes the "> " too.
+    is_think, content = split_think_action("> think: now I have the mug.")
+    assert is_think is True
+    assert content == "now I have the mug."
+
+
+def test_split_think_action_passes_through_real_action_unchanged():
+    is_think, content = split_think_action("go to fridge 1")
+    assert is_think is False
+    assert content == "go to fridge 1"
+
+
+def test_load_system_prompt_fills_in_task_type_matched_examples():
+    prompt = load_system_prompt("heat")
+    assert "=== Example 1 ===" in prompt
+    assert "=== Example 2 ===" in prompt
+    # the heat-bucket example's own task text, not another bucket's
+    assert "heat" in prompt.lower()
+
+
+def test_load_system_prompt_falls_back_to_put_for_unknown_task_type():
+    # same content as the real "put" bucket, not an error
+    assert load_system_prompt("some_unseen_type") == load_system_prompt("put")
+
+
+def test_example_task_inputs_returns_all_12_fewshot_task_goals():
+    task_inputs = example_task_inputs()
+    assert len(task_inputs) == 12  # 6 buckets x 2 examples each
+    assert "put some spraybottle on toilet." in task_inputs
+
+
+def test_run_episode_logs_think_step_without_calling_env():
+    env_calls = []
+
+    def step(action):
+        env_calls.append(action)
+        return "You picked up the mug.", True, True, []
+
+    steps, summary = run_episode(
+        reset_fn=_fake_reset(admissible_commands=["take mug 1", "look"]),
+        step_fn=step,
+        llm_call=_scripted_llm(
+            "Action: think: I should take the mug.",
+            "Action: take mug 1",
+        ),
+        episode_id="ep_0013",
+        model="qwen/qwen3.8-27b",
+        max_steps=5,
+    )
+
+    assert len(steps) == 2
+    assert steps[0].is_think is True
+    assert steps[0].action == ""
+    assert steps[0].observation == "OK."
+    # parse_reply strips trailing punctuation from the whole Action value (by design, for real
+    # commands) - a cosmetic side effect on think text too, not a functional issue.
+    assert steps[0].thought == "I should take the mug"
+    assert steps[1].is_think is False
+    assert env_calls == ["take mug 1"]  # the think turn never reached step_fn
+    assert summary.num_steps == 1  # the think turn doesn't count as a real action
+    assert summary.outcome == "success"
+
+
+def test_run_episode_think_turns_dont_count_toward_max_steps():
+    steps, summary = run_episode(
+        reset_fn=_fake_reset(admissible_commands=["look"]),
+        step_fn=_scripted_step(("still here", False, False)),
+        llm_call=_scripted_llm(
+            "Action: think: thinking once.",
+            "Action: look",
+        ),
+        episode_id="ep_0014",
+        model="qwen/qwen3.8-27b",
+        max_steps=1,  # only 1 real action allowed - the think turn must not consume it
+    )
+
+    assert summary.num_steps == 1
+    assert summary.outcome == "max_steps"
+    assert [s.is_think for s in steps] == [True, False]
+
+
+def test_run_episode_caps_consecutive_thinks_and_forces_a_real_action():
+    steps, summary = run_episode(
+        reset_fn=_fake_reset(admissible_commands=["look"]),
+        step_fn=_scripted_step(("still here", False, False)),
+        llm_call=_scripted_llm(
+            "Action: think: one.",
+            "Action: think: two.",
+            "Action: think: three - trying to stall again.",
+        ),
+        episode_id="ep_0015",
+        model="qwen/qwen3.8-27b",
+        max_steps=1,
+    )
+
+    assert [s.is_think for s in steps] == [True, True, False]
+    # the 3rd think is overridden into a real action instead of being honored
+    assert steps[2].action == "look"
+    assert steps[2].raw_action == "think: three - trying to stall again"
+    assert summary.num_steps == 1
+    assert summary.outcome == "max_steps"
+
+
+def test_run_episode_summary_has_task_type_and_prompt_version():
+    _, summary = run_episode(
+        reset_fn=_fake_reset(task_type="cool", admissible_commands=["look"]),
+        step_fn=_scripted_step(("o", True, True)),
+        llm_call=_scripted_llm("Action: look"),
+        episode_id="ep_0016",
+        model="qwen/qwen3.8-27b",
+        max_steps=5,
+    )
+
+    assert summary.task_type == "cool"
+    assert summary.prompt_version == PROMPT_VERSION
+
+
+def test_run_episode_reset_failure_summary_has_unknown_task_type():
+    def crashing_reset():
+        raise RuntimeError("ALFWorld reset failed")
+
+    _, summary = run_episode(
+        reset_fn=crashing_reset,
+        step_fn=lambda action: pytest.fail("step_fn should never be called"),
+        llm_call=lambda messages: pytest.fail("llm_call should never be called"),
+        episode_id="ep_0018",
+        model="qwen/qwen3.8-27b",
+        max_steps=5,
+    )
+
+    assert summary.task_type == "unknown"
+    assert summary.prompt_version == PROMPT_VERSION
 
 
 def test_run_episode_logs_parse_ok_false_when_reply_has_no_action_line():

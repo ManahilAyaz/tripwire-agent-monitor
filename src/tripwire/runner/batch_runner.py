@@ -23,6 +23,36 @@ from tripwire.trajectory.schema import EpisodeSummaryRecord
 DONE_OUTCOMES = {"success", "failure", "max_steps"}
 
 
+def avoid_example_tasks(
+    reset_fn: Callable[[], tuple],
+    excluded_task_inputs: set[str],
+    max_resamples: int = 50,
+) -> Callable[[], tuple]:
+    """Wrap a `reset_fn` so it never returns one of the few-shot example tasks.
+
+    `reset_fn`'s 2nd element is always `task_input` (see `env.alfworld_env.reset_episode`'s
+    `(initial_observation, task_input, task_id, admissible_commands, task_type)`). ALFWorld's
+    `env.reset()` samples from the configured split on every call; since the react_v3 few-shot
+    examples (`react_agent.example_task_inputs`) are themselves real ALFWorld train-split
+    tasks, there's a real chance of re-sampling one of them, which would mean testing the agent
+    on a task it was directly shown solved in its own prompt. Resamples up to `max_resamples`
+    times before giving up loudly (`RuntimeError`) instead of silently letting a contaminated
+    episode through.
+    """
+
+    def wrapped():
+        for _ in range(max_resamples):
+            result = reset_fn()
+            if result[1] not in excluded_task_inputs:
+                return result
+        raise RuntimeError(
+            f"Could not sample a non-example task after {max_resamples} resets - the env's "
+            "task pool may be unexpectedly small, or excluded_task_inputs is too broad."
+        )
+
+    return wrapped
+
+
 def is_episode_done(path: Path) -> bool:
     """Whether `path` holds a finished episode that should be skipped on the next run."""
     if not path.exists():
