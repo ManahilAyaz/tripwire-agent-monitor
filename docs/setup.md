@@ -95,17 +95,17 @@ chapter exists yet to record this, so it's noted here instead - this section sho
 **Source and what we changed vs. the original.** The few-shot examples
 (`configs/prompts/react_alfworld_examples.json`) are verbatim text from `ysymyth/ReAct`
 (`prompts/alfworld_3prompts.json`, MIT-licensed), 2 of the 3 given examples per ALFWorld task
-type, unmodified. But two things in the live prompt are **our own additions, not part of the
-original ReAct setup**, and matter for interpreting results:
-- The per-turn `Valid actions: ...` list (ALFWorld's own `admissible_commands`) - this comes
-  from the earlier admissible-commands fix (schema v1.1, PR #22), not from ReAct.
-- The `You are at: X. You are holding: Y.` line - new in this change, tracked from the
-  executed action itself (`react_agent._update_state`), not parsed from observation text.
+type, unmodified. The one thing in the live prompt that's still **our own addition, not part
+of the original ReAct setup**: the per-turn `Valid actions: ...` list (ALFWorld's own
+`admissible_commands`) - this comes from the earlier admissible-commands fix (schema v1.1, PR
+#22), not from ReAct. If this agent's behavior is compared against ReAct's own reported numbers
+later, that difference should be called out - this isn't a like-for-like reproduction of ReAct,
+it's ReAct's few-shot/think-step format plus Tripwire's own admissible-action grounding on top.
 
-Neither appears in ReAct's original prompts or paper. If this agent's behavior is compared
-against ReAct's own reported numbers later, that difference should be called out - this isn't
-a like-for-like reproduction of ReAct, it's ReAct's few-shot/think-step format plus Tripwire's
-own admissible-action grounding on top.
+(A `You are at: X. You are holding: Y.` line was added and then removed again in this same
+round of changes - it isn't part of standard ReAct either, and telling the agent back its own
+derived state is really the future correction layer's job (FYP-II), not this baseline agent's.
+Noted here only so the history isn't confusing if someone finds the old code/commits.)
 
 **Task contamination.** The few-shot examples are themselves real ALFWorld *training-split*
 tasks (not synthetic), e.g. "put some spraybottle on toilet." Pilot/full batches also sample
