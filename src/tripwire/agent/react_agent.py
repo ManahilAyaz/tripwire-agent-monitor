@@ -50,6 +50,27 @@ def load_system_prompt(task_type: str) -> str:
     return template.format(task_examples=load_task_examples(task_type))
 
 
+GOAL_LINE_RE = re.compile(r"Your task is to:\s*(.*?)\s*\n", re.IGNORECASE)
+
+
+def example_task_inputs() -> set[str]:
+    """The exact goal text of every few-shot example task (configs/prompts/react_alfworld_examples.json).
+
+    These are real ALFWorld training-split tasks, not synthetic ones - so a pilot/full batch
+    that also samples from the train split could by chance re-draw one of them, which would
+    mean testing the agent on a task it was already directly shown solved in its own prompt.
+    `runner.batch_runner.avoid_example_tasks` uses this set to resample instead.
+    """
+    data = json.loads((_PROMPTS_DIR / "react_alfworld_examples.json").read_text(encoding="utf-8"))
+    task_inputs = set()
+    for examples in data["examples"].values():
+        for text in examples:
+            match = GOAL_LINE_RE.search(text)
+            if match:
+                task_inputs.add(match.group(1).strip())
+    return task_inputs
+
+
 def parse_reply(text: str) -> tuple[str, str, bool]:
     """Parse a raw LLM reply into (thought, action, parse_ok).
 

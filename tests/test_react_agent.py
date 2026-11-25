@@ -7,6 +7,7 @@ import pytest
 
 from tripwire.agent.react_agent import (
     PROMPT_VERSION,
+    example_task_inputs,
     load_system_prompt,
     map_to_admissible_action,
     parse_reply,
@@ -324,6 +325,12 @@ def test_load_system_prompt_fills_in_task_type_matched_examples():
 def test_load_system_prompt_falls_back_to_put_for_unknown_task_type():
     # same content as the real "put" bucket, not an error
     assert load_system_prompt("some_unseen_type") == load_system_prompt("put")
+
+
+def test_example_task_inputs_returns_all_12_fewshot_task_goals():
+    task_inputs = example_task_inputs()
+    assert len(task_inputs) == 12  # 6 buckets x 2 examples each
+    assert "put some spraybottle on toilet." in task_inputs
 
 
 def test_run_episode_logs_think_step_without_calling_env():
