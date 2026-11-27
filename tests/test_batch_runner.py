@@ -2,11 +2,27 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from tripwire.runner.batch_runner import avoid_example_tasks, is_episode_done, run_batch
+from tripwire.runner.batch_runner import (
+    avoid_example_tasks,
+    is_episode_done,
+    run_batch,
+    sequential_game_order,
+)
 from tripwire.trajectory.logger import TrajectoryLogger, read_jsonl
 from tripwire.trajectory.schema import EpisodeSummaryRecord, StepRecord
+
+
+class FakeTextworldEnv:
+    """Stands in for TextWorld's `TextworldBatchGymEnv` - just the two attributes
+    `sequential_game_order` depends on (`gamefiles`, `_gamefiles_iterator`)."""
+
+    def __init__(self, gamefiles):
+        self.gamefiles = list(gamefiles)
+        self._gamefiles_iterator = iter(self.gamefiles)  # ALFWorld's own (restart-unsafe) default
 
 
 def _summary(episode_id, outcome, num_steps=1):
@@ -241,6 +257,78 @@ def test_run_batch_success_resets_the_consecutive_error_streak(tmp_path):
     # ep_0004 anyway since num_episodes=3. All 3 episodes run.
     assert len(summaries) == 3
     assert [s.outcome for s in summaries] == ["error", "success", "error"]
+
+
+def test_sequential_game_order_rejects_env_missing_expected_attributes():
+    class BareEnv:
+        pass
+
+    with pytest.raises(AttributeError):
+        sequential_game_order(BareEnv(), order_path="x", cursor_path="y")
+
+
+def test_sequential_game_order_creates_order_file_shuffled_from_gamefiles(tmp_path):
+    env = FakeTextworldEnv(["a", "b", "c", "d", "e"])
+    order_path = tmp_path / "order.json"
+
+    order = sequential_game_order(env, order_path=order_path, cursor_path=tmp_path / "cursor.txt")
+
+    assert sorted(order) == ["a", "b", "c", "d", "e"]
+    assert json.loads(order_path.read_text(encoding="utf-8")) == order
+
+
+def test_sequential_game_order_never_repeats_within_one_process(tmp_path):
+    env = FakeTextworldEnv(["a", "b", "c"])
+    sequential_game_order(env, order_path=tmp_path / "order.json", cursor_path=tmp_path / "cursor.txt")
+
+    drawn = [next(env._gamefiles_iterator) for _ in range(3)]
+
+    assert len(set(drawn)) == 3  # no repeats
+    with pytest.raises(StopIteration):
+        next(env._gamefiles_iterator)  # only 3 games existed - exhausted, not wrapped around
+
+
+def test_sequential_game_order_resumes_from_persisted_cursor_across_a_new_env(tmp_path):
+    order_path = tmp_path / "order.json"
+    cursor_path = tmp_path / "cursor.txt"
+
+    env_1 = FakeTextworldEnv(["a", "b", "c", "d"])
+    sequential_game_order(env_1, order_path=order_path, cursor_path=cursor_path)
+    first_two = [next(env_1._gamefiles_iterator) for _ in range(2)]
+
+    # Simulate a process restart: a brand new env (same underlying game pool), same paths.
+    env_2 = FakeTextworldEnv(["a", "b", "c", "d"])
+    sequential_game_order(env_2, order_path=order_path, cursor_path=cursor_path)
+    next_two = [next(env_2._gamefiles_iterator) for _ in range(2)]
+
+    assert set(first_two).isdisjoint(next_two)  # env_2 never redraws what env_1 already drew
+
+
+def test_sequential_game_order_loads_identical_order_on_resume_even_if_gamefiles_reordered(tmp_path):
+    order_path = tmp_path / "order.json"
+    cursor_path = tmp_path / "cursor.txt"
+
+    env_1 = FakeTextworldEnv(["a", "b", "c"])
+    first_order = sequential_game_order(env_1, order_path=order_path, cursor_path=cursor_path)
+
+    # A fresh env whose own `gamefiles` attribute happens to come back in a different order -
+    # sequential_game_order must ignore it and reuse the saved order, not reshuffle.
+    env_2 = FakeTextworldEnv(["c", "a", "b"])
+    second_order = sequential_game_order(env_2, order_path=order_path, cursor_path=cursor_path)
+
+    assert second_order == first_order
+
+
+def test_sequential_game_order_advances_cursor_before_yielding(tmp_path):
+    # The cursor file must already reflect a game as "consumed" the instant it's handed out,
+    # not after - so a crash immediately after this point can never cause a repeat.
+    env = FakeTextworldEnv(["a", "b"])
+    cursor_path = tmp_path / "cursor.txt"
+    sequential_game_order(env, order_path=tmp_path / "order.json", cursor_path=cursor_path)
+
+    next(env._gamefiles_iterator)
+
+    assert cursor_path.read_text(encoding="utf-8") == "1"
 
 
 def test_run_batch_writes_valid_jsonl_for_fresh_episode(tmp_path):
