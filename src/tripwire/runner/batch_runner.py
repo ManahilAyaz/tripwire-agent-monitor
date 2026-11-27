@@ -7,9 +7,10 @@ broken episode hang a whole run.
 
 from __future__ import annotations
 
+import json
 import random
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from tripwire.agent.react_agent import run_episode
 from tripwire.paths import resolve_output_dir
@@ -21,6 +22,88 @@ from tripwire.trajectory.schema import EpisodeSummaryRecord
 # survive Groq free-tier interruptions, and silently losing episodes toward the pilot target
 # would defeat that.
 DONE_OUTCOMES = {"success", "failure", "max_steps"}
+
+# Fixed, arbitrary seed for the one-time shuffle in `sequential_game_order` — not meant to be
+# varied per run (see that function's docstring for why).
+TASK_ORDER_SEED = 20240115
+
+
+def sequential_game_order(
+    env: Any,
+    order_path: Path | str,
+    cursor_path: Path | str,
+    seed: int = TASK_ORDER_SEED,
+) -> list[str]:
+    """Make `env.reset()` draw games strictly without replacement, in a fixed order that
+    survives a process restart (T27 fix for episodes repeating the same ALFWorld task).
+
+    Root cause this replaces: ALFWorld's `env.reset()` delegates game selection to
+    TextWorld's `TextworldBatchGymEnv`, which already samples *without* replacement from a
+    shuffled cycle over all game files — but that cycle is seeded with a hardcoded `1234`
+    private to the `TextworldBatchGymEnv` instance, unrelated to this project's own
+    `random.seed()`/`--seed`. Every time a Kaggle session restart forced a fresh `env` to be
+    built, that cycle restarted at position 0 of the *same* fixed shuffle, so episodes run
+    right after a restart could redraw a game an earlier process invocation (this run, or
+    even the separate pilot run) had already used — not a random collision, a deterministic
+    replay. See `data/raw/full/EXCLUDED.md` for the 11 episodes this caused in the T27 corpus.
+
+    Fix: own the order and the resume position ourselves, on disk, instead of relying on
+    `env`'s internal (restart-unsafe) cycle:
+    - `order_path` holds the full game-file list, shuffled once with `seed` the first time
+      this runs, then loaded unchanged on every later invocation (same file -> same order,
+      forever, regardless of how many times the process restarts).
+    - `cursor_path` holds how many games have been handed out so far. It's written *before*
+      each game is handed out (not after), so even a crash immediately after this function
+      hands out a game leaves the cursor already past it — the unsafe direction would be
+      under-counting (risking a repeat); over-counting just skips one never-attempted game,
+      which is harmless.
+    - `env._gamefiles_iterator` is monkey-patched to walk `order` starting at the resumed
+      cursor. This relies on `TextworldBatchGymEnv`'s current internal attribute names
+      (`gamefiles`, `_gamefiles_iterator`) — confirmed against ALFWorld's `AlfredTWEnv.init_env`
+      (`alfworld/agents/environment/alfred_tw_env.py`), which returns `textworld.gym.make(...)`
+      directly with no further gym.Wrapper layered on top, so these are reachable as plain
+      attributes on whatever `tripwire.env.alfworld_env.make_env` returns. If a future
+      ALFWorld/TextWorld upgrade renames these, the `AttributeError` below will say so loudly
+      instead of silently falling back to the old repeat-prone behavior.
+
+    Called once right after `env = make_env(...)`, before any `reset_fn()` calls. Safe to call
+    on every invocation (first run creates `order_path`/`cursor_path`; every later one resumes
+    from them). Returns the loaded/created order, mainly so tests can inspect it.
+    """
+    if not hasattr(env, "gamefiles") or not hasattr(env, "_gamefiles_iterator"):
+        raise AttributeError(
+            "env has no 'gamefiles'/'_gamefiles_iterator' attribute - TextWorld's internal "
+            "TextworldBatchGymEnv API this monkey-patch depends on may have changed (see "
+            "this function's docstring). Falling back silently would reintroduce the "
+            "repeated-task bug this exists to fix, so this raises instead."
+        )
+
+    # .resolve() (not just Path(...)) collapses any ".." components before this touches the
+    # filesystem - same system-boundary pattern as tripwire.paths.resolve_output_dir, applied
+    # here too since order_path/cursor_path are passed in directly rather than always routed
+    # through that helper.
+    order_path = Path(order_path).expanduser().resolve()
+    cursor_path = Path(cursor_path).expanduser().resolve()
+
+    if order_path.exists():
+        order = json.loads(order_path.read_text(encoding="utf-8"))
+    else:
+        order = list(env.gamefiles)
+        random.Random(seed).shuffle(order)
+        order_path.parent.mkdir(parents=True, exist_ok=True)
+        order_path.write_text(json.dumps(order), encoding="utf-8")
+
+    cursor = int(cursor_path.read_text(encoding="utf-8")) if cursor_path.exists() else 0
+
+    def _advancing_iterator():
+        nonlocal cursor
+        for gamefile in order[cursor:]:
+            cursor += 1
+            cursor_path.write_text(str(cursor), encoding="utf-8")
+            yield gamefile
+
+    env._gamefiles_iterator = _advancing_iterator()
+    return order
 
 
 def avoid_example_tasks(
