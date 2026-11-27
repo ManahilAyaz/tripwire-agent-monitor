@@ -10,6 +10,8 @@ import random
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from tripwire.paths import resolve_output_dir
+
 SEED = 20250601  # fixed - never change without deliberately re-splitting
 
 
@@ -51,11 +53,10 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=SEED)
     args = parser.parse_args()
 
-    summaries = load_summaries(Path(args.corpus_dir))
+    summaries = load_summaries(Path(args.corpus_dir).expanduser().resolve())
     calibration_ids, test_ids = make_splits(summaries, seed=args.seed)
 
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = resolve_output_dir(args.out_dir)
     (out_dir / "calibration_ids.txt").write_text("\n".join(calibration_ids) + "\n", encoding="utf-8")
     (out_dir / "test_ids.txt").write_text("\n".join(test_ids) + "\n", encoding="utf-8")
 

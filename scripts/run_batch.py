@@ -6,14 +6,13 @@ native Windows) and GROQ_API_KEY set.
 """
 
 import argparse
-from pathlib import Path
 
 import yaml
 
 from tripwire.agent.groq_client import make_groq_llm
 from tripwire.agent.react_agent import example_task_inputs
 from tripwire.env.alfworld_env import make_env, reset_episode, step_episode
-from tripwire.paths import resolve_config_path
+from tripwire.paths import resolve_config_path, resolve_output_dir
 from tripwire.runner.batch_runner import avoid_example_tasks, run_batch, sequential_game_order
 
 
@@ -30,7 +29,7 @@ def main() -> None:
         cfg = yaml.safe_load(f)
 
     env = make_env(args.config)
-    out_dir = Path(args.out_dir)
+    out_dir = resolve_output_dir(args.out_dir)
     sequential_game_order(
         env,
         order_path=out_dir / "_task_order.json",

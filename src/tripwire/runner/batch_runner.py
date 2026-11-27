@@ -78,8 +78,12 @@ def sequential_game_order(
             "repeated-task bug this exists to fix, so this raises instead."
         )
 
-    order_path = Path(order_path)
-    cursor_path = Path(cursor_path)
+    # .resolve() (not just Path(...)) collapses any ".." components before this touches the
+    # filesystem - same system-boundary pattern as tripwire.paths.resolve_output_dir, applied
+    # here too since order_path/cursor_path are passed in directly rather than always routed
+    # through that helper.
+    order_path = Path(order_path).expanduser().resolve()
+    cursor_path = Path(cursor_path).expanduser().resolve()
 
     if order_path.exists():
         order = json.loads(order_path.read_text(encoding="utf-8"))
